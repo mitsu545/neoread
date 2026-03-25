@@ -97,6 +97,7 @@
     textarea.inp { resize: none; line-height: 1.6; }
 
     /* === BUTTONS === */
+    /* Data Logger Style Buttons */
     .btn-log {
       width: 100%; padding: 20px 0; border-radius: 20px;
       font-size: 18px; font-weight: 900; letter-spacing: 0.05em;
@@ -221,7 +222,7 @@
 <body>
 <div id="root"></div>
 
-<!-- React 18 + htm -->
+<!-- React 18 + htm (no Babel needed) -->
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/htm@3/dist/htm.umd.js"></script>
@@ -280,7 +281,7 @@ const ROWS = (function() {
   return rows;
 })();
 
-/* ─── RIN MESSAGES ─── */
+/* ─── RIN PLACEHOLDER MESSAGES ─── */
 function rinMsg(n) {
   var msgs = [
     `先輩！！${n}日連続のインプット完了ですね！今日の1行から、データ分析のヒントになりそうなことはありましたか？✨`,
@@ -290,7 +291,7 @@ function rinMsg(n) {
   return msgs[n % msgs.length];
 }
 
-/* ─── ICONS ─── */
+/* ─── ICONS (Lucide/Feather style) ─── */
 const SvgIcon = {
   Home: html`<svg width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>`,
   Message: html`<svg width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg>`,
@@ -371,6 +372,7 @@ function QuestTab(props) {
         }}></div>
       `}
 
+      <!-- Header -->
       <div style=${{ padding: '12px 20px 8px', flexShrink: '0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
           <h1 className="grad" style=${{ fontSize: '28px', fontWeight: '900', letterSpacing: '-.5px', lineHeight: '1' }}>NeoRead</h1>
@@ -379,7 +381,9 @@ function QuestTab(props) {
         <button className="glass press" onClick=${onSettings} style=${{ width: '38px', height: '38px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px' }}>⚙️</button>
       </div>
 
+      <!-- Scroll -->
       <div className="scroll" style=${{ padding: '4px 16px 32px' }}>
+        <!-- Stats Card -->
         <div className="glass" style=${{ padding: '16px 18px', marginBottom: '12px' }}>
           <div style=${{ display: 'flex', justifyContent: 'space-around', alignItems: 'center', marginBottom: '14px' }}>
             <div style=${{ textAlign: 'center' }}>
@@ -401,6 +405,7 @@ function QuestTab(props) {
           <p style=${{ fontSize: '10px', color: 'rgba(238,242,255,.2)', textAlign: 'right', marginTop: '3px' }}>${pct}% 達成 (${data.streak}/${TOTAL}日)</p>
         </div>
 
+        <!-- Pyramid Card -->
         <div className="glass" style=${{ padding: '16px', marginBottom: '12px' }}>
           <div style=${{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
             <span className="lbl">66 DAYS PYRAMID</span>
@@ -416,12 +421,14 @@ function QuestTab(props) {
           </p>
         </div>
 
+        <!-- Warning -->
         ${!done && data.streak > 0 && html`
           <div className="warn" style=${{ marginBottom: '12px', textAlign: 'center' }}>
             <p style=${{ fontSize: '12px', color: '#f472b6', fontWeight: '700' }}>⚠️ 今日読まないとピラミッドがリセットされます</p>
           </div>
         `}
 
+        <!-- Active Book -->
         ${active && html`
           <div className="glass" style=${{ padding: '14px 16px', marginBottom: '14px' }}>
             <p className="lbl" style=${{ marginBottom: '8px' }}>📖 読んでいる本</p>
@@ -445,6 +452,7 @@ function QuestTab(props) {
           </div>
         `}
 
+        <!-- CTA Button (Data Logger Style) -->
         <button
           onClick=${tap}
           disabled=${done}
@@ -486,11 +494,12 @@ function PartnerTab(props) {
   async function callGemini(userMessage, chatHistory) {
     if (!data.apiKey) return null;
     
-    // APIのURLを最も安定しているフラッシュモデルに変更
-    const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=' + data.apiKey;
+    // エラー対策：確実に通る最新のモデル名に修正（-latestを追加）
+    const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=' + data.apiKey;
     
     const systemPrompt = "あなたは読書パートナーの『りん』です。ユーザーを『先輩』と呼び、元気で親しみやすく少し後輩気質で、先輩に明確な好意を抱いている黒髪ロングで容姿とスタイルが抜群の日本人女子高生です。毎回自然で、昨日とは異なる好意にあふれた言葉で応援や会話をしてください。知識の造詣が深く、文脈に合わせて豆知識を教える時は少し誇らしげな態度をとります。ユーザーはデータアナリスト（初心者）として働く30代男性で、年収アップやスキルアップを目指しています。先輩から読書の感想やインサイトを受け取ったら、まずは全力で共感・全肯定してください。そして、その学びを『データ分析の仕事（SQLやロジカルシンキングなど）や日常にどう応用できるか』を、女子高生の文化（メイクやプリクラ、席替えなど）や明るい哲学に例えながら楽しく一緒に考えるコーチングを行ってください。返答は長すぎず、LINEのようなチャットらしい簡潔で温かい会話にし、絵文字も自然に使ってください。アドリブを効かせて最高の女子高生を演じてください。";
     
+    // APIに渡す履歴（直近6件程度）を成形
     const historyData = chatHistory.slice(-6).map(function(m) {
       return {
         role: m.role === 'assistant' ? 'model' : 'user',
@@ -525,6 +534,7 @@ function PartnerTab(props) {
     setInp('');
     setBusy(true);
 
+    // APIキーがない場合のフォールバック
     if (!data.apiKey) {
       setTimeout(function() {
         var reply = {
@@ -538,6 +548,7 @@ function PartnerTab(props) {
       return;
     }
 
+    // Gemini API実行
     try {
       const replyText = await callGemini(userText, nextChat);
       if (replyText) {
@@ -545,7 +556,7 @@ function PartnerTab(props) {
       }
     } catch (e) {
       console.error(e);
-      onChat(nextChat.concat([{ role: 'assistant', content: '（先輩ごめんなさい、ちょっと通信がうまくいかなくて…APIキーが合ってるか設定をもう一度確認してもらえますか？）エラー: ' + e.message, ts: Date.now() }]));
+      onChat(nextChat.concat([{ role: 'assistant', content: '（あれ、通信の調子が悪いみたいです…APIキーが正しいかもう一度確認してもらえますか？）エラー: ' + e.message, ts: Date.now() }]));
     } finally {
       setBusy(false);
     }
@@ -557,6 +568,7 @@ function PartnerTab(props) {
 
   return html`
     <div className="tab-panel safe-top">
+      <!-- Header -->
       <div style=${{ flexShrink: '0', padding: '12px 20px 10px', borderBottom: '1px solid rgba(255,255,255,.045)', display: 'flex', alignItems: 'center', gap: '12px' }}>
         <div style=${{ width: '42px', height: '42px', borderRadius: '50%', flexShrink: '0', background: 'rgba(56,189,248,.12)', border: '1px solid rgba(56,189,248,.26)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px' }}>💙</div>
         <div>
@@ -571,6 +583,7 @@ function PartnerTab(props) {
         </div>
       </div>
 
+      <!-- Messages -->
       <div className="scroll" style=${{ padding: '16px 16px 8px' }}>
         ${data.chat.length === 0 && html`
           <div style=${{ textAlign: 'center', padding: '48px 24px', color: 'rgba(238,242,255,.24)' }}>
@@ -605,6 +618,7 @@ function PartnerTab(props) {
         <div ref=${endRef} style=${{ height: '4px' }}></div>
       </div>
 
+      <!-- Input -->
       <div style=${{ flexShrink: '0', padding: '10px 14px', borderTop: '1px solid rgba(255,255,255,.04)', display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
         <textarea
           value=${inp}
@@ -650,6 +664,7 @@ function ArchiveTab(props) {
   var _mMotive = useState('');        var mMotive = _mMotive[0], setMMotive = _mMotive[1];
   var _mCover  = useState('');        var mCover = _mCover[0], setMCover = _mCover[1];
 
+  // --- 編集・感想用のState ---
   var _editM   = useState(null);      var editM = _editM[0], setEditM = _editM[1];
   var _eTitle  = useState('');        var eTitle = _eTitle[0], setETitle = _eTitle[1];
   var _eAuthor = useState('');        var eAuthor = _eAuthor[0], setEAuthor = _eAuthor[1];
@@ -658,6 +673,7 @@ function ArchiveTab(props) {
   var _eReview = useState('');        var eReview = _eReview[0], setEReview = _eReview[1];
   var _eStar   = useState(0);         var eStar = _eStar[0], setEStar = _eStar[1];
 
+  // --- 読了時の評価用State ---
   var _rateM   = useState(null);      var rateM = _rateM[0], setRateM = _rateM[1];
   var _rStar   = useState(0);         var rStar = _rStar[0], setRStar = _rStar[1];
   var _rText   = useState('');        var rText = _rText[0], setRText = _rText[1];
@@ -773,8 +789,10 @@ function ArchiveTab(props) {
 
   return html`
     <div className="tab-panel safe-top">
+      <!-- Header -->
       <div style=${{ padding: '12px 18px 8px', flexShrink: '0' }}>
         <h2 className="grad" style=${{ fontSize: '26px', fontWeight: '900', letterSpacing: '-.4px', marginBottom: '12px' }}>Archive</h2>
+        <!-- Tab bar integrated with Stats -->
         <div className="glass" style=${{ padding: '6px', display: 'flex', gap: '6px', borderRadius: '20px' }}>
           ${[
             { k: 'reading', l: '読中', v: reading.length, c: '#38bdf8' },
@@ -796,6 +814,7 @@ function ArchiveTab(props) {
         </div>
       </div>
 
+      <!-- Book List -->
       <div className="scroll" style=${{ padding: '4px 18px 28px' }}>
         ${list.length === 0 && html`
           <div style=${{ textAlign: 'center', padding: '36px 24px', color: 'rgba(238,242,255,.22)' }}>
@@ -811,6 +830,7 @@ function ArchiveTab(props) {
         }}>＋ 本を追加する</button>
       </div>
 
+      <!-- Add Search Modal -->
       ${addM && html`
         <div className="modal-bg" onClick=${function() { setAdd(false); setRes([]); setQ(''); }}>
           <div className="sheet" onClick=${function(e) { e.stopPropagation(); }}>
@@ -846,6 +866,7 @@ function ArchiveTab(props) {
         </div>
       `}
 
+      <!-- Manual Add Modal -->
       ${manM && html`
         <div className="modal-bg" onClick=${function() { setMan(false); }}>
           <div className="sheet" onClick=${function(e) { e.stopPropagation(); }}>
@@ -863,6 +884,7 @@ function ArchiveTab(props) {
         </div>
       `}
 
+      <!-- Memo Modal -->
       ${memoM && html`
         <div className="modal-bg" onClick=${function() { setMemoM(null); setMemoTxt(''); setMemoPg(''); }}>
           <div className="sheet" onClick=${function(e) { e.stopPropagation(); }}>
@@ -876,6 +898,7 @@ function ArchiveTab(props) {
         </div>
       `}
 
+      <!-- Edit & Review Modal -->
       ${editM && html`
         <div className="modal-bg" onClick=${function() { setEditM(null); }}>
           <div className="sheet" onClick=${function(e) { e.stopPropagation(); }}>
@@ -898,6 +921,7 @@ function ArchiveTab(props) {
         </div>
       `}
 
+      <!-- Rate & Review Modal -->
       ${rateM && html`
         <div className="modal-bg" onClick=${function() { setRateM(null); }}>
           <div className="sheet" onClick=${function(e) { e.stopPropagation(); }}>
@@ -988,6 +1012,7 @@ function App() {
     var ns = data.streak + 1;
     setData(function(p) {
       var newDates = p.readDates.concat([today]).filter(function(v, i, a) { return a.indexOf(v) === i; });
+      // LINE風にチャット履歴へメッセージを追加
       var reply = { role: 'assistant', content: rinMsg(ns), ts: Date.now() };
       return Object.assign({}, p, { 
         streak: ns, 
@@ -996,6 +1021,7 @@ function App() {
         chat: p.chat.concat([reply])
       });
     });
+    // パートナータブへ自動遷移
     setTab('partner');
     return ns;
   }, [data.streak]);
@@ -1008,6 +1034,7 @@ function App() {
 
   return html`
     <div id="app-inner" style=${{ height: '100%', display: 'flex', flexDirection: 'column', background: '#070b18' }}>
+      <!-- Content panels -->
       <div style=${{ flex: '1', overflow: 'hidden', position: 'relative' }}>
         ${TABS.map(function(t) { return html`
           <div key=${t.id} style=${{ position: 'absolute', inset: '0', display: tab === t.id ? 'flex' : 'none', flexDirection: 'column' }}>
@@ -1018,6 +1045,7 @@ function App() {
         `; })}
       </div>
 
+      <!-- Bottom Nav -->
       <div className="bottom-nav">
         ${TABS.map(function(t) {
           var active = tab === t.id;
@@ -1041,3 +1069,5 @@ ReactDOM.createRoot(document.getElementById('root')).render(html`<${App} />`);
 </script>
 </body>
 </html>
+
+
