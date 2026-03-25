@@ -1,0 +1,1073 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#070b18">
+  <title>NeoRead</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800;900&display=swap" rel="stylesheet">
+  <style>
+    /* === RESET === */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { height: 100%; }
+    body {
+      height: 100%;
+      background: #070b18;
+      color: #eef2ff;
+      font-family: 'Syne', -apple-system, 'Hiragino Sans', 'Yu Gothic', sans-serif;
+      -webkit-font-smoothing: antialiased;
+      -webkit-tap-highlight-color: transparent;
+      -webkit-text-size-adjust: 100%;
+      touch-action: manipulation;
+      overflow: hidden;
+    }
+    button { cursor: pointer; font-family: inherit; border: none; background: none; color: inherit; }
+    input, textarea { font-family: inherit; }
+    ::-webkit-scrollbar { display: none; }
+    * { scrollbar-width: none; }
+
+    /* === ROOT HEIGHT (JS sets --vh) === */
+    #root {
+      height: calc(var(--vh, 1vh) * 100);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      background: #070b18;
+    }
+
+    /* === LAYOUT === */
+    .content-area { flex: 1; overflow: hidden; position: relative; }
+    .tab-panel { position: absolute; inset: 0; display: flex; flex-direction: column; }
+    .tab-panel.hidden { display: none; }
+    .scroll { overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; flex: 1; }
+
+    /* === GLASS === */
+    .glass {
+      background: rgba(255,255,255,.042);
+      border: 1px solid rgba(255,255,255,.07);
+      border-radius: 22px;
+    }
+
+    /* === GRADIENT TEXT === */
+    .grad {
+      background: linear-gradient(130deg, #38bdf8 0%, #818cf8 50%, #f472b6 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    /* === LABEL === */
+    .lbl { font-size: 10px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: rgba(238,242,255,.28); }
+
+    /* === PYRAMID BLOCKS === */
+    .blk { width: 18px; height: 18px; border-radius: 5px; }
+    .blk-on {
+      background: linear-gradient(145deg, #38bdf8, #0284c7);
+      box-shadow: 0 0 6px rgba(56,189,248,.5), inset 0 1px 0 rgba(255,255,255,.2);
+    }
+    .blk-today {
+      background: linear-gradient(145deg, #38bdf8, #f472b6);
+      animation: todayPulse 2s ease-in-out infinite;
+    }
+    .blk-off { background: rgba(255,255,255,.032); border: 1px solid rgba(255,255,255,.055); }
+    .blk-goal { background: rgba(251,191,36,.07); border: 1px solid rgba(251,191,36,.2); }
+
+    /* === PROGRESS === */
+    .prog-track { height: 3px; border-radius: 4px; background: rgba(255,255,255,.07); overflow: hidden; }
+    .prog-fill { height: 100%; border-radius: 4px; background: linear-gradient(90deg,#38bdf8,#f472b6); transition: width .5s ease; }
+
+    /* === INPUTS === */
+    .inp {
+      width: 100%;
+      background: rgba(255,255,255,.042);
+      border: 1px solid rgba(255,255,255,.08);
+      border-radius: 14px;
+      padding: 13px 16px;
+      font-size: 16px;
+      color: #eef2ff;
+      outline: none;
+      -webkit-appearance: none;
+      transition: border-color .2s;
+    }
+    .inp:focus { border-color: rgba(56,189,248,.4); }
+    .inp::placeholder { color: rgba(238,242,255,.2); }
+    textarea.inp { resize: none; line-height: 1.6; }
+
+    /* === BUTTONS === */
+    /* Data Logger Style Buttons */
+    .btn-log {
+      width: 100%; padding: 20px 0; border-radius: 20px;
+      font-size: 18px; font-weight: 900; letter-spacing: 0.05em;
+      background: rgba(56,189,248,.1);
+      border: 1px solid rgba(56,189,248,.3);
+      color: #38bdf8;
+      box-shadow: 0 0 20px rgba(56,189,248,.15), inset 0 0 10px rgba(56,189,248,.05);
+      transition: all .2s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    .btn-log:active { transform: scale(.96); background: rgba(56,189,248,.2); }
+    .btn-logged {
+      width: 100%; padding: 20px 0; border-radius: 20px;
+      font-size: 16px; font-weight: 800; letter-spacing: 0.05em;
+      background: rgba(255,255,255,.03);
+      border: 1px dashed rgba(255,255,255,.15);
+      color: rgba(238,242,255,.3);
+      cursor: not-allowed;
+    }
+
+    .btn-grad {
+      width: 100%; padding: 16px; border-radius: 18px;
+      font-weight: 800; font-size: 14px; color: white;
+      background: linear-gradient(130deg, #38bdf8 0%, #818cf8 50%, #f472b6 100%);
+      transition: transform .1s;
+    }
+    .btn-grad:active { transform: scale(.97); }
+    .btn-ghost {
+      width: 100%; padding: 12px 14px; border-radius: 14px;
+      font-size: 12px; font-weight: 600;
+      background: rgba(255,255,255,.05);
+      border: 1px solid rgba(255,255,255,.09);
+      color: rgba(238,242,255,.42);
+    }
+    .press { transition: transform .1s; }
+    .press:active { transform: scale(.94); }
+
+    /* === CHAT === */
+    .bubble-ai { background: rgba(56,189,248,.1); border: 1px solid rgba(56,189,248,.17); border-radius: 6px 18px 18px 18px; padding: 11px 14px; }
+    .bubble-user { background: rgba(244,114,182,.1); border: 1px solid rgba(244,114,182,.17); border-radius: 18px 6px 18px 18px; padding: 11px 14px; }
+
+    /* === CHIP === */
+    .chip {
+      display: inline-flex; align-items: center;
+      padding: 5px 10px; border-radius: 9px;
+      font-size: 11px; font-weight: 700; cursor: pointer;
+      transition: transform .1s;
+    }
+    .chip:active { transform: scale(.92); }
+
+    /* === MODAL === */
+    .modal-bg {
+      position: fixed; inset: 0; z-index: 80;
+      background: rgba(0,0,0,.78);
+      display: flex; align-items: flex-end;
+    }
+    .modal-bg.hidden { display: none; }
+    .sheet {
+      width: 100%;
+      background: #0f1628;
+      border: 1px solid rgba(255,255,255,.07);
+      border-bottom: none;
+      border-radius: 26px 26px 0 0;
+      padding: 24px 20px;
+      padding-bottom: calc(24px + env(safe-area-inset-bottom));
+      max-height: 88vh;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      position: relative;
+      animation: slideUp .28s cubic-bezier(.34,1.56,.64,1);
+    }
+
+    /* === BOTTOM NAV === */
+    .bottom-nav {
+      flex-shrink: 0;
+      background: rgba(7,11,24,.97);
+      border-top: 1px solid rgba(255,255,255,.05);
+      display: flex;
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+    .nav-btn {
+      flex: 1; padding: 9px 0 6px;
+      display: flex; flex-direction: column; align-items: center; gap: 3px;
+      transition: opacity .2s;
+      background: transparent;
+      border: none;
+    }
+    .nav-btn span { font-size: 10px; font-weight: 700; }
+    .nav-btn .dot { width: 4px; height: 4px; border-radius: 50%; background: #38bdf8; }
+    .nav-btn.inactive { opacity: .4; }
+
+    /* === COVER === */
+    .cover { width: 46px; height: 64px; border-radius: 8px; object-fit: cover; flex-shrink: 0; }
+    .cover-ph { width: 46px; height: 64px; border-radius: 8px; background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.07); display: flex; align-items: center; justify-content: center; font-size: 20px; flex-shrink: 0; }
+
+    /* === WARN === */
+    .warn { border-radius: 16px; padding: 10px 16px; background: rgba(244,114,182,.06); border: 1px solid rgba(244,114,182,.18); }
+
+    /* === SAFE AREA TOP === */
+    .safe-top { padding-top: env(safe-area-inset-top); }
+
+    /* === ANIMATIONS === */
+    @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+    @keyframes popIn { 0% { transform: scale(.55) translateY(14px); opacity: 0; } 70% { transform: scale(1.06); } 100% { transform: scale(1); opacity: 1; } }
+    @keyframes todayPulse { 0%,100% { box-shadow: 0 0 10px rgba(56,189,248,.55); } 50% { box-shadow: 0 0 24px rgba(56,189,248,.95), 0 0 40px rgba(244,114,182,.3); } }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes flash { 0% { opacity: .75; } 100% { opacity: 0; } }
+    @keyframes confetti { 0% { transform: translateY(-4px) rotate(0deg); opacity: 1; } 100% { transform: translateY(110px) rotate(680deg); opacity: 0; } }
+    @keyframes dot { 0%,80%,100% { transform: translateY(0); } 40% { transform: translateY(-6px); } }
+
+    .anim-popin { animation: popIn .38s cubic-bezier(.34,1.56,.64,1) forwards; }
+    .anim-fadein { animation: fadeIn .2s ease-out; }
+
+    /* === DIVIDER === */
+    hr.soft { border: none; border-top: 1px solid rgba(255,255,255,.055); margin: 14px 0; }
+
+    /* === STARS === */
+    .star-btn { cursor: pointer; transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1); }
+    .star-btn:hover { transform: scale(1.15); }
+    .star-btn:active { transform: scale(0.9); }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+
+<!-- React 18 + htm (no Babel needed) -->
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/htm@3/dist/htm.umd.js"></script>
+
+<script>
+'use strict';
+
+/* ─── SETUP ─── */
+const html = htm.bind(React.createElement);
+const { useState, useEffect, useRef, useCallback } = React;
+
+/* ─── FIX MOBILE HEIGHT ─── */
+function setVh() {
+  document.documentElement.style.setProperty('--vh', (window.innerHeight * 0.01) + 'px');
+}
+setVh();
+window.addEventListener('resize', setVh);
+window.addEventListener('orientationchange', function() { setTimeout(setVh, 120); });
+
+/* ─── CONSTANTS ─── */
+const TOTAL = 66;
+
+/* ─── JST UTILS ─── */
+function jstISO() {
+  const d = new Date(Date.now() + 9 * 3600 * 1000);
+  return d.toISOString().slice(0, 10);
+}
+function jstYest() {
+  const d = new Date(Date.now() + 9 * 3600 * 1000 - 86400 * 1000);
+  return d.toISOString().slice(0, 10);
+}
+function jstHour() {
+  return parseInt(new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo', hour: 'numeric', hour12: false })) || 0;
+}
+function jstDisp() {
+  return new Date().toLocaleDateString('ja-JP', { timeZone: 'Asia/Tokyo', month: 'long', day: 'numeric', weekday: 'short' });
+}
+
+/* ─── STORAGE ─── */
+const SK = 'neoread_v3';
+// APIキー保存用のフィールドを追加
+const DEFS = { streak: 0, lastRead: null, readDates: [], books: [], chat: [], apiKey: '' };
+function loadData() {
+  try { const s = localStorage.getItem(SK); return s ? Object.assign({}, DEFS, JSON.parse(s)) : Object.assign({}, DEFS); }
+  catch(e) { return Object.assign({}, DEFS); }
+}
+function saveData(d) { try { localStorage.setItem(SK, JSON.stringify(d)); } catch(e) {} }
+
+/* ─── PYRAMID ROWS ─── */
+const ROWS = (function() {
+  var rows = [], idx = 0;
+  for (var s = 1; s <= 11; s++) {
+    var row = [];
+    for (var i = 0; i < s; i++) row.push(idx++);
+    rows.push(row);
+  }
+  return rows;
+})();
+
+/* ─── CYAN PLACEHOLDER MESSAGES ─── */
+function cyanMsg(n) {
+  var msgs = [
+    `先輩！！${n}日連続のインプット完了ですね！今日の1行から、データ分析のヒントになりそうなことはありましたか？✨`,
+    `${n}日目のログ、確認しました！先輩がコツコツ積み上げてるデータ、絶対キャリアに活きますよ！今日の気付きを教えてください🩵`,
+    `お疲れ様です！もう${n}日連続ですか！？その継続力、尊敬します🥹 今日の1ページで一番「なるほど」と思ったこと、聞きたいです！`,
+  ];
+  return msgs[n % msgs.length];
+}
+
+/* ─── ICONS (Lucide/Feather style) ─── */
+const SvgIcon = {
+  Home: html`<svg width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>`,
+  Message: html`<svg width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg>`,
+  Library: html`<svg width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg>`
+};
+
+/* ─── OPEN LIBRARY SEARCH ─── */
+function searchOL(q) {
+  return fetch('https://openlibrary.org/search.json?q=' + encodeURIComponent(q) + '&limit=6&fields=title,author_name,cover_i')
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      return (d.docs || []).map(function(x) {
+        return {
+          title: x.title || '不明',
+          author: (x.author_name || [])[0] || '不明',
+          coverUrl: x.cover_i ? 'https://covers.openlibrary.org/b/id/' + x.cover_i + '-M.jpg' : null
+        };
+      });
+    });
+}
+
+/* ══════════════════════════════════
+   PYRAMID COMPONENT
+══════════════════════════════════ */
+function Pyramid(props) {
+  var streak = props.streak, todayRead = props.todayRead;
+  return html`
+    <div style=${{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px' }}>
+      ${ROWS.map(function(row, ri) {
+        return html`
+          <div key=${ri} style=${{ display: 'flex', gap: '3px' }}>
+            ${row.map(function(n) {
+              var filled  = n >= TOTAL - streak;
+              var isToday = n === TOTAL - streak && todayRead && streak > 0;
+              var isGoal  = n === 0 && !filled;
+              var cls = isToday ? 'blk blk-today' : filled ? 'blk blk-on' : isGoal ? 'blk blk-goal' : 'blk blk-off';
+              return html`<div key=${n} className=${cls}></div>`;
+            })}
+          </div>
+        `;
+      })}
+    </div>
+  `;
+}
+
+/* ══════════════════════════════════
+   QUEST TAB
+══════════════════════════════════ */
+function QuestTab(props) {
+  var data = props.data, onRead = props.onRead, onSettings = props.onSettings;
+  var _flash = useState(false);
+  var flash = _flash[0], setFlash = _flash[1];
+
+  var today  = jstISO();
+  var done   = data.readDates.indexOf(today) >= 0;
+  var active = null;
+  for (var i = 0; i < data.books.length; i++) {
+    if (data.books[i].status === 'reading') { active = data.books[i]; break; }
+  }
+  var pct    = Math.round(data.streak / TOTAL * 100);
+
+  function tap() {
+    if (done) return;
+    setFlash(true);
+    setTimeout(function() {
+      setFlash(false);
+      onRead();
+    }, 440);
+  }
+
+  return html`
+    <div className="tab-panel safe-top">
+      ${flash && html`
+        <div style=${{
+          position: 'fixed', inset: '0', zIndex: '99', pointerEvents: 'none',
+          background: 'linear-gradient(130deg,rgba(56,189,248,.42),rgba(244,114,182,.35))',
+          animation: 'flash .44s ease-out forwards'
+        }}></div>
+      `}
+
+      <!-- Header -->
+      <div style=${{ padding: '12px 20px 8px', flexShrink: '0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <h1 className="grad" style=${{ fontSize: '28px', fontWeight: '900', letterSpacing: '-.5px', lineHeight: '1' }}>NeoRead</h1>
+          <p style=${{ fontSize: '11px', color: 'rgba(56,189,248,.8)', marginTop: '4px', fontWeight: '800', letterSpacing: '0.05em' }}>1-Line Database</p>
+        </div>
+        <button className="glass press" onClick=${onSettings} style=${{ width: '38px', height: '38px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px' }}>⚙️</button>
+      </div>
+
+      <!-- Scroll -->
+      <div className="scroll" style=${{ padding: '4px 16px 32px' }}>
+        <!-- Stats Card -->
+        <div className="glass" style=${{ padding: '16px 18px', marginBottom: '12px' }}>
+          <div style=${{ display: 'flex', justifyContent: 'space-around', alignItems: 'center', marginBottom: '14px' }}>
+            <div style=${{ textAlign: 'center' }}>
+              <div className="grad" style=${{ fontSize: '44px', fontWeight: '900', lineHeight: '1' }}>${data.streak}</div>
+              <div className="lbl" style=${{ marginTop: '3px' }}>連続日数</div>
+            </div>
+            <div style=${{ width: '1px', height: '40px', background: 'rgba(255,255,255,.07)' }}></div>
+            <div style=${{ textAlign: 'center' }}>
+              <div style=${{ fontSize: '22px', fontWeight: '900', color: 'rgba(251,191,36,.8)', lineHeight: '1' }}>/ ${TOTAL}</div>
+              <div className="lbl" style=${{ marginTop: '3px' }}>目標</div>
+            </div>
+            <div style=${{ width: '1px', height: '40px', background: 'rgba(255,255,255,.07)' }}></div>
+            <div style=${{ textAlign: 'center' }}>
+              <div style=${{ fontSize: '22px', fontWeight: '900', color: done ? '#38bdf8' : '#f472b6', lineHeight: '1' }}>${done ? '✓' : '—'}</div>
+              <div className="lbl" style=${{ marginTop: '3px' }}>今日</div>
+            </div>
+          </div>
+          <div className="prog-track"><div className="prog-fill" style=${{ width: pct + '%' }}></div></div>
+          <p style=${{ fontSize: '10px', color: 'rgba(238,242,255,.2)', textAlign: 'right', marginTop: '3px' }}>${pct}% 達成 (${data.streak}/${TOTAL}日)</p>
+        </div>
+
+        <!-- Pyramid Card -->
+        <div className="glass" style=${{ padding: '16px', marginBottom: '12px' }}>
+          <div style=${{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+            <span className="lbl">66 DAYS PYRAMID</span>
+            ${data.streak === TOTAL
+              ? html`<span style=${{ fontSize: '12px', color: '#fbbf24', fontWeight: '800' }}>🏆 COMPLETE!</span>`
+              : data.streak > 0
+                ? html`<span style=${{ fontSize: '11px', color: 'rgba(56,189,248,.5)' }}>あと ${TOTAL - data.streak} 日</span>`
+                : null}
+          </div>
+          <${Pyramid} streak=${data.streak} todayRead=${done} />
+          <p style=${{ fontSize: '10px', color: 'rgba(238,242,255,.13)', textAlign: 'center', marginTop: '10px' }}>
+            ▲ 頂点 Day 66 → 下から積み上がります
+          </p>
+        </div>
+
+        <!-- Warning -->
+        ${!done && data.streak > 0 && html`
+          <div className="warn" style=${{ marginBottom: '12px', textAlign: 'center' }}>
+            <p style=${{ fontSize: '12px', color: '#f472b6', fontWeight: '700' }}>⚠️ 今日読まないとピラミッドがリセットされます</p>
+          </div>
+        `}
+
+        <!-- Active Book -->
+        ${active && html`
+          <div className="glass" style=${{ padding: '14px 16px', marginBottom: '14px' }}>
+            <p className="lbl" style=${{ marginBottom: '8px' }}>📖 読んでいる本</p>
+            <div style=${{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+              ${active.coverUrl
+                ? html`<img src=${active.coverUrl} className="cover" onError=${function(e) { e.target.style.display = 'none'; }} />`
+                : html`<div className="cover-ph">📚</div>`}
+              <div style=${{ flex: '1', minWidth: '0' }}>
+                <p style=${{ fontWeight: '800', fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>${active.title}</p>
+                <p style=${{ fontSize: '11px', color: 'rgba(238,242,255,.35)', marginTop: '2px' }}>${active.author}</p>
+                ${active.totalPages > 0 && html`
+                  <div style=${{ marginTop: '8px' }}>
+                    <div className="prog-track">
+                      <div className="prog-fill" style=${{ width: Math.min(100, Math.round((active.currentPage || 0) / active.totalPages * 100)) + '%' }}></div>
+                    </div>
+                    <p style=${{ fontSize: '10px', color: 'rgba(238,242,255,.22)', marginTop: '3px' }}>p.${active.currentPage || 0} / ${active.totalPages}</p>
+                  </div>
+                `}
+              </div>
+            </div>
+          </div>
+        `}
+
+        <!-- CTA Button (Data Logger Style) -->
+        <button
+          onClick=${tap}
+          disabled=${done}
+          className=${done ? 'btn-logged' : 'btn-log'}
+          style=${{ marginBottom: '10px' }}
+        >${done ? '🔒 Logged (同期完了)' : '⚡️ Log Insight'}</button>
+
+        ${done && html`
+          <p style=${{ textAlign: 'center', fontSize: '11px', color: 'rgba(238,242,255,.2)' }}>
+            Cyanからメッセージが届いています → 💙
+          </p>
+        `}
+      </div>
+    </div>
+  `;
+}
+
+/* ══════════════════════════════════
+   PARTNER TAB (Gemini API Integration)
+══════════════════════════════════ */
+function PartnerTab(props) {
+  var data = props.data, onChat = props.onChat;
+  var _inp = useState('');
+  var inp = _inp[0], setInp = _inp[1];
+  var _busy = useState(false);
+  var busy = _busy[0], setBusy = _busy[1];
+  var endRef = useRef(null);
+
+  useEffect(function() {
+    if (endRef.current) endRef.current.scrollIntoView({ behavior: 'smooth' });
+  }, [data.chat.length, busy]);
+
+  var active = null;
+  for (var i = 0; i < data.books.length; i++) {
+    if (data.books[i].status === 'reading') { active = data.books[i]; break; }
+  }
+
+  // === Gemini API Call ===
+  async function callGemini(userMessage, chatHistory) {
+    if (!data.apiKey) return null;
+    
+    const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' + data.apiKey;
+    
+    const systemPrompt = "あなたは読書パートナーのCyan(シアン)です。ユーザーを『先輩』と呼び、元気で親しみやすく少し後輩気質な性格です。ユーザーはデータアナリスト（初心者）として働く30代男性で、年収アップやスキルアップを目指しています。ユーザーからの読書の感想やインサイトを受け取り、それを『データ分析の仕事や日常にどう応用できるか』を一緒に考えるコーチングの役割を担ってください。返答は長すぎず、LINEのようなチャットらしい簡潔で温かい会話にしてください。絵文字も使ってください。";
+
+    // APIに渡す履歴（直近6件程度）を成形
+    const historyData = chatHistory.slice(-6).map(function(m) {
+      return {
+        role: m.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: m.content }]
+      };
+    });
+
+    const payload = {
+      systemInstruction: { parts: [{ text: systemPrompt }] },
+      contents: historyData
+    };
+
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    
+    const resData = await res.json();
+    if (resData.error) throw new Error(resData.error.message);
+    
+    return resData.candidates[0].content.parts[0].text;
+  }
+
+  async function send() {
+    if (!inp.trim() || busy) return;
+    var userText = inp.trim();
+    var msg = { role: 'user', content: userText, ts: Date.now() };
+    var nextChat = data.chat.concat([msg]);
+    
+    onChat(nextChat);
+    setInp('');
+    setBusy(true);
+
+    // APIキーがない場合のフォールバック
+    if (!data.apiKey) {
+      setTimeout(function() {
+        var reply = {
+          role: 'assistant',
+          content: '先輩！お疲れ様です！APIキーが設定されていないみたいです。設定（⚙️）からAPIキーを入力していただくと、私ともっと深いデータ分析の話や、読書の壁打ちができますよ！🩵',
+          ts: Date.now()
+        };
+        onChat(nextChat.concat([reply]));
+        setBusy(false);
+      }, 800);
+      return;
+    }
+
+    // Gemini API実行
+    try {
+      const replyText = await callGemini(userText, nextChat);
+      if (replyText) {
+        onChat(nextChat.concat([{ role: 'assistant', content: replyText, ts: Date.now() }]));
+      }
+    } catch (e) {
+      console.error(e);
+      onChat(nextChat.concat([{ role: 'assistant', content: '（あれ、通信の調子が悪いみたいです…APIキーが正しいかもう一度確認してもらえますか？）エラー: ' + e.message, ts: Date.now() }]));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function keyDown(e) {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+  }
+
+  return html`
+    <div className="tab-panel safe-top">
+      <!-- Header -->
+      <div style=${{ flexShrink: '0', padding: '12px 20px 10px', borderBottom: '1px solid rgba(255,255,255,.045)', display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <div style=${{ width: '42px', height: '42px', borderRadius: '50%', flexShrink: '0', background: 'rgba(56,189,248,.12)', border: '1px solid rgba(56,189,248,.26)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px' }}>💙</div>
+        <div>
+          <p style=${{ fontWeight: '800', fontSize: '15px' }}>Cyan <span style=${{fontSize: '10px', color: 'rgba(238,242,255,.3)', fontWeight: 'normal'}}>AI Partner</span></p>
+          <p style=${{ fontSize: '11px', color: data.apiKey ? '#38bdf8' : 'rgba(244,114,182,.8)' }}>
+            ${data.apiKey ? '● オンライン' : '○ APIキー未設定'}
+          </p>
+        </div>
+        <div style=${{ marginLeft: 'auto', textAlign: 'right' }}>
+          <p style=${{ fontSize: '10px', color: 'rgba(238,242,255,.2)' }}>連続 ${data.streak} 日</p>
+          ${active && html`<p style=${{ fontSize: '10px', color: 'rgba(238,242,255,.25)', marginTop: '2px' }}>📖 ${active.title.slice(0, 12)}${active.title.length > 12 ? '…' : ''}</p>`}
+        </div>
+      </div>
+
+      <!-- Messages -->
+      <div className="scroll" style=${{ padding: '16px 16px 8px' }}>
+        ${data.chat.length === 0 && html`
+          <div style=${{ textAlign: 'center', padding: '48px 24px', color: 'rgba(238,242,255,.24)' }}>
+            <div style=${{ fontSize: '44px', marginBottom: '14px' }}>💙</div>
+            <p style=${{ fontSize: '13px', lineHeight: '1.75' }}>先輩！今日も読書しましたか？<br/>なんでも話しかけてください！</p>
+          </div>
+        `}
+        ${data.chat.map(function(m, i) {
+          return html`
+            <div key=${i} className="anim-fadein" style=${{ display: 'flex', justifyContent: m.role === 'user' ? 'flex-end' : 'flex-start', gap: '8px', marginBottom: '12px' }}>
+              ${m.role === 'assistant' && html`
+                <div style=${{ width: '28px', height: '28px', borderRadius: '50%', flexShrink: '0', marginTop: '2px', background: 'rgba(56,189,248,.1)', border: '1px solid rgba(56,189,248,.18)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px' }}>💙</div>
+              `}
+              <div className=${m.role === 'user' ? 'bubble-user' : 'bubble-ai'} style=${{ maxWidth: '78%' }}>
+                <p style=${{ fontSize: '13px', color: 'rgba(238,242,255,.88)', lineHeight: '1.65', whiteSpace: 'pre-wrap' }}>${m.content}</p>
+              </div>
+            </div>
+          `;
+        })}
+        ${busy && html`
+          <div style=${{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
+            <div style=${{ width: '28px', height: '28px', borderRadius: '50%', background: 'rgba(56,189,248,.1)', border: '1px solid rgba(56,189,248,.18)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px' }}>💙</div>
+            <div className="bubble-ai" style=${{ padding: '14px' }}>
+              <div style=${{ display: 'flex', gap: '5px' }}>
+                ${[0,1,2].map(function(i) {
+                  return html`<div key=${i} style=${{ width: '7px', height: '7px', borderRadius: '50%', background: '#38bdf8', animation: 'dot 1.1s ease-in-out ' + (i * .18) + 's infinite' }}></div>`;
+                })}
+              </div>
+            </div>
+          </div>
+        `}
+        <div ref=${endRef} style=${{ height: '4px' }}></div>
+      </div>
+
+      <!-- Input -->
+      <div style=${{ flexShrink: '0', padding: '10px 14px', borderTop: '1px solid rgba(255,255,255,.04)', display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
+        <textarea
+          value=${inp}
+          onInput=${function(e) { setInp(e.target.value); }}
+          onKeyDown=${keyDown}
+          placeholder="Cyanに話しかける..."
+          rows="1"
+          className="inp"
+          style=${{ flex: '1', maxHeight: '80px' }}
+        ></textarea>
+        <button
+          onClick=${send}
+          disabled=${!inp.trim() || busy}
+          className="press"
+          style=${{
+            width: '44px', height: '44px', borderRadius: '14px', flexShrink: '0',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: '17px', color: 'white',
+            background: inp.trim() ? 'linear-gradient(130deg,#38bdf8,#f472b6)' : 'rgba(255,255,255,.07)',
+            transition: 'background .2s'
+          }}
+        >↑</button>
+      </div>
+    </div>
+  `;
+}
+
+/* ══════════════════════════════════
+   ARCHIVE TAB
+══════════════════════════════════ */
+function ArchiveTab(props) {
+  var data = props.data, onBooks = props.onBooks;
+  var _tab     = useState('reading'); var tab = _tab[0], setTab = _tab[1];
+  var _addM    = useState(false);     var addM = _addM[0], setAdd = _addM[1];
+  var _manM    = useState(false);     var manM = _manM[0], setMan = _manM[1];
+  var _memoM   = useState(null);      var memoM = _memoM[0], setMemoM = _memoM[1];
+  var _q       = useState('');        var q = _q[0], setQ = _q[1];
+  var _results = useState([]);        var results = _results[0], setRes = _results[1];
+  var _srch    = useState(false);     var srch = _srch[0], setSrch = _srch[1];
+  var _memoTxt = useState('');        var memoTxt = _memoTxt[0], setMemoTxt = _memoTxt[1];
+  var _memoPg  = useState('');        var memoPg = _memoPg[0], setMemoPg = _memoPg[1];
+  var _mTitle  = useState('');        var mTitle = _mTitle[0], setMTitle = _mTitle[1];
+  var _mMotive = useState('');        var mMotive = _mMotive[0], setMMotive = _mMotive[1];
+  var _mCover  = useState('');        var mCover = _mCover[0], setMCover = _mCover[1];
+
+  // --- 編集・感想用のState ---
+  var _editM   = useState(null);      var editM = _editM[0], setEditM = _editM[1];
+  var _eTitle  = useState('');        var eTitle = _eTitle[0], setETitle = _eTitle[1];
+  var _eAuthor = useState('');        var eAuthor = _eAuthor[0], setEAuthor = _eAuthor[1];
+  var _eMotive = useState('');        var eMotive = _eMotive[0], setEMotive = _eMotive[1];
+  var _eCover  = useState('');        var eCover = _eCover[0], setECover = _eCover[1];
+  var _eReview = useState('');        var eReview = _eReview[0], setEReview = _eReview[1];
+  var _eStar   = useState(0);         var eStar = _eStar[0], setEStar = _eStar[1];
+
+  // --- 読了時の評価用State ---
+  var _rateM   = useState(null);      var rateM = _rateM[0], setRateM = _rateM[1];
+  var _rStar   = useState(0);         var rStar = _rStar[0], setRStar = _rStar[1];
+  var _rText   = useState('');        var rText = _rText[0], setRText = _rText[1];
+
+  var reading = data.books.filter(function(b) { return b.status === 'reading'; });
+  var queue   = data.books.filter(function(b) { return b.status === 'queue'; });
+  var done    = data.books.filter(function(b) { return b.status === 'done'; });
+
+  function doSearch() {
+    if (!q.trim()) return;
+    setSrch(true); setRes([]);
+    searchOL(q).then(function(r) { setRes(r); setSrch(false); }).catch(function() { setRes([]); setSrch(false); });
+  }
+
+  function addBook(info, status) {
+    onBooks(data.books.concat([Object.assign({ id: String(Date.now()), status: status, currentPage: 0, totalPages: null, memos: [], addedAt: jstISO() }, info)]));
+    setAdd(false); setMan(false); setQ(''); setRes([]); setMTitle(''); setMMotive(''); setMCover('');
+  }
+
+  function upBook(id, u) { onBooks(data.books.map(function(b) { return b.id === id ? Object.assign({}, b, u) : b; })); }
+  function delBook(id) { if (confirm('この本を削除しますか？')) onBooks(data.books.filter(function(b) { return b.id !== id; })); }
+  function saveMemo(bookId) {
+    if (!memoTxt.trim()) return;
+    var bk = data.books.find(function(b) { return b.id === bookId; });
+    upBook(bookId, { memos: (bk ? bk.memos || [] : []).concat([{ id: String(Date.now()), text: memoTxt, page: memoPg, date: jstISO() }]) });
+    setMemoTxt(''); setMemoPg(''); setMemoM(null);
+  }
+
+  function StarRating(props) {
+    return html`
+      <div style=${{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+        ${[1, 2, 3, 4, 5].map(function(s) {
+          var isFilled = s <= props.value;
+          return html`
+            <svg key=${s} onClick=${function() { props.onChange(s); }} className=${"star-btn " + (isFilled ? "filled" : "")} width="32" height="32" viewBox="0 0 24 24" fill=${isFilled ? '#fbbf24' : 'none'} stroke=${isFilled ? '#fbbf24' : 'rgba(255,255,255,.2)'} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+            </svg>
+          `;
+        })}
+      </div>
+    `;
+  }
+
+  var listMap = { reading: reading, queue: queue, done: done };
+  var list = listMap[tab] || [];
+
+  function BookCard(bkProps) {
+    var bk = bkProps.bk;
+    var recentMemos = (bk.memos || []).slice(-2);
+    return html`
+      <div className="glass anim-fadein" style=${{ padding: '16px', marginBottom: '12px' }}>
+        <div style=${{ display: 'flex', gap: '12px' }}>
+          ${bk.coverUrl ? html`<img src=${bk.coverUrl} className="cover" onError=${function(e) { e.target.style.display = 'none'; }} />` : html`<div className="cover-ph">📚</div>`}
+          <div style=${{ flex: '1', minWidth: '0' }}>
+            <p style=${{ fontWeight: '800', fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>${bk.title}</p>
+            ${bk.motive && html`<p style=${{ fontSize: '11px', color: 'rgba(238,242,255,.6)', marginTop: '4px', marginBottom: '8px', lineHeight: '1.4', padding: '6px', background: 'rgba(255,255,255,.05)', borderLeft: '2px solid #38bdf8', borderRadius: '0 4px 4px 0' }}>💡 ${bk.motive}</p>`}
+            ${(bk.review || bk.rating) && html`
+              <div style=${{ marginTop: '4px', marginBottom: '8px', padding: '8px', background: 'rgba(244,114,182,.1)', borderLeft: '2px solid #f472b6', borderRadius: '0 4px 4px 0' }}>
+                ${bk.rating && html`
+                  <div style=${{ display: 'flex', gap: '3px', marginBottom: bk.review ? '6px' : '0' }}>
+                    ${[1, 2, 3, 4, 5].map(function(s) {
+                      var isFilled = s <= bk.rating;
+                      return html`
+                        <svg key=${s} width="14" height="14" viewBox="0 0 24 24" fill=${isFilled ? '#fbbf24' : 'none'} stroke=${isFilled ? '#fbbf24' : 'rgba(255,255,255,.2)'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                        </svg>
+                      `;
+                    })}
+                  </div>
+                `}
+                ${bk.review && html`<p style=${{ fontSize: '12px', color: 'rgba(238,242,255,.8)', lineHeight: '1.5' }}>${bk.review}</p>`}
+              </div>
+            `}
+            ${(!bk.motive && !bk.review && !bk.rating) && html`<div style=${{ height: '8px' }}></div>`}
+            ${bk.status === 'reading' && html`
+              <div style=${{ display: 'flex', gap: '6px', alignItems: 'center', marginBottom: '8px' }}>
+                <input type="number" value=${bk.currentPage || ''} onInput=${function(e) { upBook(bk.id, { currentPage: parseInt(e.target.value) || 0 }); }}
+                  placeholder="今のページ" className="inp" style=${{ width: '90px', padding: '6px 10px', fontSize: '12px' }} />
+                <span style=${{ color: 'rgba(238,242,255,.2)', fontSize: '11px' }}>/</span>
+                <input type="number" value=${bk.totalPages || ''} onInput=${function(e) { upBook(bk.id, { totalPages: parseInt(e.target.value) || null }); }}
+                  placeholder="総ページ" className="inp" style=${{ width: '90px', padding: '6px 10px', fontSize: '12px' }} />
+              </div>
+            `}
+            ${bk.status === 'reading' && bk.totalPages > 0 && html`
+              <div style=${{ marginBottom: '8px' }}>
+                <div className="prog-track"><div className="prog-fill" style=${{ width: Math.min(100, Math.round((bk.currentPage || 0) / bk.totalPages * 100)) + '%' }}></div></div>
+                <p style=${{ fontSize: '10px', color: 'rgba(238,242,255,.2)', marginTop: '3px' }}>${Math.min(100, Math.round((bk.currentPage || 0) / bk.totalPages * 100))}%</p>
+              </div>
+            `}
+            ${recentMemos.map(function(m) { return html`
+              <div key=${m.id} style=${{ borderLeft: '2px solid rgba(56,189,248,.25)', paddingLeft: '8px', marginBottom: '5px' }}>
+                <p style=${{ fontSize: '11px', color: 'rgba(238,242,255,.45)', lineHeight: '1.5' }}>
+                  ${m.page && html`<span style=${{ color: 'rgba(56,189,248,.5)', marginRight: '5px' }}>p.${m.page}</span>`}${m.text}
+                </p>
+              </div>
+            `; })}
+            ${bk.memos && bk.memos.length > 2 && html`<p style=${{ fontSize: '10px', color: 'rgba(238,242,255,.2)', marginBottom: '4px' }}>+${bk.memos.length - 2} 件のメモ</p>`}
+            <div style=${{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '6px' }}>
+              <span className="chip press" onClick=${function() { setMemoM(bk.id); }} style=${{ background: 'rgba(56,189,248,.12)', color: '#38bdf8' }}>📝 気づきメモ</span>
+              <span className="chip press" onClick=${function() {
+                setETitle(bk.title || ''); setEAuthor(bk.author || ''); setEMotive(bk.motive || ''); setECover(bk.coverUrl || ''); setEReview(bk.review || ''); setEStar(bk.rating || 0); setEditM(bk.id);
+              }} style=${{ background: 'rgba(255,255,255,.08)', color: 'rgba(238,242,255,.6)' }}>⚙️ 編集</span>
+              ${bk.status === 'reading' && html`<span className="chip press" onClick=${function() { setRStar(bk.rating || 0); setRText(bk.review || ''); setRateM(bk.id); }} style=${{ background: 'rgba(129,140,248,.12)', color: '#818cf8' }}>✅ 読了</span>`}
+              ${bk.status === 'queue'   && html`<span className="chip press" onClick=${function() { upBook(bk.id, { status: 'reading' }); }} style=${{ background: 'rgba(56,189,248,.12)', color: '#38bdf8' }}>📖 読み始める</span>`}
+              ${bk.status === 'done'    && html`<span className="chip press" onClick=${function() { upBook(bk.id, { status: 'reading' }); }} style=${{ background: 'rgba(56,189,248,.12)', color: '#38bdf8' }}>↩ 再読</span>`}
+              <span className="chip press" onClick=${function() { delBook(bk.id); }} style=${{ background: 'rgba(255,255,255,.04)', color: 'rgba(238,242,255,.25)' }}>🗑</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  return html`
+    <div className="tab-panel safe-top">
+      <!-- Header -->
+      <div style=${{ padding: '12px 18px 8px', flexShrink: '0' }}>
+        <h2 className="grad" style=${{ fontSize: '26px', fontWeight: '900', letterSpacing: '-.4px', marginBottom: '12px' }}>Archive</h2>
+        <!-- Tab bar integrated with Stats -->
+        <div className="glass" style=${{ padding: '6px', display: 'flex', gap: '6px', borderRadius: '20px' }}>
+          ${[
+            { k: 'reading', l: '読中', v: reading.length, c: '#38bdf8' },
+            { k: 'queue',   l: '積読', v: queue.length, c: '#818cf8' },
+            { k: 'done',    l: '読了', v: done.length, c: '#f472b6' }
+          ].map(function(t) { return html`
+            <button key=${t.k} onClick=${function() { setTab(t.k); }} className="press" style=${{
+              flex: '1', padding: '12px 4px', borderRadius: '16px',
+              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px',
+              color: tab === t.k ? 'white' : 'rgba(238,242,255,.4)',
+              background: tab === t.k ? 'rgba(255,255,255,.07)' : 'transparent',
+              border: tab === t.k ? '1px solid rgba(255,255,255,.1)' : '1px solid transparent',
+              transition: 'all .2s'
+            }}>
+              <span style=${{ color: tab === t.k ? t.c : 'rgba(238,242,255,.3)', fontSize: '20px', fontWeight: '900', lineHeight: '1' }}>${t.v}</span>
+              <span style=${{ fontSize: '11px', fontWeight: '700' }}>${t.l}</span>
+            </button>
+          `; })}
+        </div>
+      </div>
+
+      <!-- Book List -->
+      <div className="scroll" style=${{ padding: '4px 18px 28px' }}>
+        ${list.length === 0 && html`
+          <div style=${{ textAlign: 'center', padding: '36px 24px', color: 'rgba(238,242,255,.22)' }}>
+            <div style=${{ fontSize: '32px', marginBottom: '10px' }}>📚</div>
+            <p style=${{ fontSize: '13px' }}>本を追加しましょう</p>
+          </div>
+        `}
+        ${list.map(function(bk) { return html`<${BookCard} key=${bk.id} bk=${bk} />`; })}
+        <button onClick=${function() { setAdd(true); }} className="press" style=${{
+          width: '100%', padding: '16px', borderRadius: '20px',
+          border: '1.5px dashed rgba(255,255,255,.09)', background: 'transparent',
+          color: 'rgba(238,242,255,.28)', fontSize: '13px', fontWeight: '700'
+        }}>＋ 本を追加する</button>
+      </div>
+
+      <!-- Add Search Modal -->
+      ${addM && html`
+        <div className="modal-bg" onClick=${function() { setAdd(false); setRes([]); setQ(''); }}>
+          <div className="sheet" onClick=${function(e) { e.stopPropagation(); }}>
+            <h3 style=${{ fontWeight: '900', fontSize: '16px', marginBottom: '14px' }}>📚 本を追加</h3>
+            <div style=${{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
+              <input value=${q} onInput=${function(e) { setQ(e.target.value); }} onKeyDown=${function(e) { if (e.key === 'Enter') doSearch(); }}
+                placeholder="書名・著者名（英語書籍向け）" className="inp" style=${{ flex: '1' }} autoFocus />
+              <button onClick=${doSearch} disabled=${srch} className="press" style=${{
+                padding: '12px 16px', borderRadius: '14px', color: 'white', fontWeight: '700', fontSize: '13px', flexShrink: '0',
+                background: 'linear-gradient(130deg,#38bdf8,#818cf8)'
+              }}>${srch ? '…' : '検索'}</button>
+            </div>
+            ${results.map(function(bk, i) {
+              return html`
+                <div key=${i} style=${{ display: 'flex', gap: '12px', alignItems: 'center', padding: '10px 12px', borderRadius: '16px', marginBottom: '8px', background: 'rgba(255,255,255,.038)', border: '1px solid rgba(255,255,255,.06)' }}>
+                  ${bk.coverUrl
+                    ? html`<img src=${bk.coverUrl} style=${{ width: '36px', height: '50px', borderRadius: '6px', objectFit: 'cover', flexShrink: '0' }} />`
+                    : html`<div style=${{ width: '36px', height: '50px', borderRadius: '6px', background: 'rgba(255,255,255,.05)', flexShrink: '0', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>📚</div>`}
+                  <div style=${{ flex: '1', minWidth: '0' }}>
+                    <p style=${{ fontSize: '13px', fontWeight: '700', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>${bk.title}</p>
+                  </div>
+                  <div style=${{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                    <span className="chip press" onClick=${function() { addBook(bk, 'reading'); }} style=${{ background: 'rgba(56,189,248,.18)', color: '#38bdf8', fontSize: '11px' }}>読中</span>
+                    <span className="chip press" onClick=${function() { addBook(bk, 'queue'); }} style=${{ background: 'rgba(129,140,248,.18)', color: '#818cf8', fontSize: '11px' }}>積読</span>
+                  </div>
+                </div>
+              `;
+            })}
+            <hr className="soft" />
+            <button onClick=${function() { setMTitle(q); setMan(true); setAdd(false); }} className="btn-ghost">📝 手動で追加（日本語書籍・URLで書影登録）</button>
+            <div style=${{ height: '8px' }}></div>
+          </div>
+        </div>
+      `}
+
+      <!-- Manual Add Modal -->
+      ${manM && html`
+        <div className="modal-bg" onClick=${function() { setMan(false); }}>
+          <div className="sheet" onClick=${function(e) { e.stopPropagation(); }}>
+            <h3 style=${{ fontWeight: '900', fontSize: '16px', marginBottom: '14px' }}>📝 手動で追加</h3>
+            <input value=${mTitle} onInput=${function(e) { setMTitle(e.target.value); }} placeholder="書名 *" className="inp" style=${{ marginBottom: '10px' }} autoFocus />
+            <textarea value=${mMotive} onInput=${function(e) { setMMotive(e.target.value); }} placeholder="なぜ読もうと思ったか？（目的・きっかけ）" rows="2" className="inp" style=${{ marginBottom: '10px' }}></textarea>
+            <input value=${mCover} onInput=${function(e) { setMCover(e.target.value); }} placeholder="書影URL（任意・Amazon画像URLなど）" className="inp" style=${{ marginBottom: '18px' }} />
+            <div style=${{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+              <button onClick=${function() { if (!mTitle.trim()) return; addBook({ title: mTitle, motive: mMotive, coverUrl: mCover || null }, 'reading'); }} className="press"
+                style=${{ flex: '1', padding: '14px', borderRadius: '16px', background: 'rgba(56,189,248,.16)', color: '#38bdf8', fontWeight: '800', fontSize: '13px' }}>📖 読中</button>
+              <button onClick=${function() { if (!mTitle.trim()) return; addBook({ title: mTitle, motive: mMotive, coverUrl: mCover || null }, 'queue'); }} className="press"
+                style=${{ flex: '1', padding: '14px', borderRadius: '16px', background: 'rgba(129,140,248,.16)', color: '#818cf8', fontWeight: '800', fontSize: '13px' }}>📚 積読</button>
+            </div>
+          </div>
+        </div>
+      `}
+
+      <!-- Memo Modal -->
+      ${memoM && html`
+        <div className="modal-bg" onClick=${function() { setMemoM(null); setMemoTxt(''); setMemoPg(''); }}>
+          <div className="sheet" onClick=${function(e) { e.stopPropagation(); }}>
+            <h3 style=${{ fontWeight: '900', fontSize: '16px', marginBottom: '14px' }}>✏️ 日々の気づきメモ</h3>
+            <input type="number" value=${memoPg} onInput=${function(e) { setMemoPg(e.target.value); }} placeholder="ページ数（任意）" className="inp" style=${{ marginBottom: '10px' }} />
+            <textarea value=${memoTxt} onInput=${function(e) { setMemoTxt(e.target.value); }}
+              placeholder="心に残った1行や、自分の考えをメモ..." rows="4" className="inp" style=${{ marginBottom: '16px' }} autoFocus></textarea>
+            <button onClick=${function() { saveMemo(memoM); }} className="btn-grad">保存する</button>
+            <div style=${{ height: '8px' }}></div>
+          </div>
+        </div>
+      `}
+
+      <!-- Edit & Review Modal -->
+      ${editM && html`
+        <div className="modal-bg" onClick=${function() { setEditM(null); }}>
+          <div className="sheet" onClick=${function(e) { e.stopPropagation(); }}>
+            <h3 style=${{ fontWeight: '900', fontSize: '16px', marginBottom: '14px' }}>⚙️ 本の編集</h3>
+            <input value=${eTitle} onInput=${function(e) { setETitle(e.target.value); }} placeholder="書名 *" className="inp" style=${{ marginBottom: '10px' }} />
+            <input value=${eAuthor} onInput=${function(e) { setEAuthor(e.target.value); }} placeholder="著者名" className="inp" style=${{ marginBottom: '10px' }} />
+            <textarea value=${eMotive} onInput=${function(e) { setEMotive(e.target.value); }} placeholder="なぜ読もうと思ったか？（目的・きっかけ）" rows="2" className="inp" style=${{ marginBottom: '10px' }}></textarea>
+            <input value=${eCover} onInput=${function(e) { setECover(e.target.value); }} placeholder="書影URL（任意）" className="inp" style=${{ marginBottom: '18px' }} />
+            <hr className="soft" />
+            <p className="lbl" style=${{ marginBottom: '12px', textAlign: 'center' }}>評価と総括</p>
+            <div style=${{ marginBottom: '16px' }}><${StarRating} value=${eStar} onChange=${setEStar} /></div>
+            <textarea value=${eReview} onInput=${function(e) { setEReview(e.target.value); }} placeholder="この本から得た最大の学びや感想..." rows="3" className="inp" style=${{ marginBottom: '16px' }}></textarea>
+            <button onClick=${function() {
+              if (!eTitle.trim()) return;
+              upBook(editM, { title: eTitle, author: eAuthor, motive: eMotive, coverUrl: eCover || null, review: eReview, rating: eStar });
+              setEditM(null);
+            }} className="btn-grad">保存する</button>
+            <div style=${{ height: '8px' }}></div>
+          </div>
+        </div>
+      `}
+
+      <!-- Rate & Review Modal -->
+      ${rateM && html`
+        <div className="modal-bg" onClick=${function() { setRateM(null); }}>
+          <div className="sheet" onClick=${function(e) { e.stopPropagation(); }}>
+            <h3 style=${{ fontWeight: '900', fontSize: '16px', marginBottom: '14px', textAlign: 'center' }}>✅ 読了おめでとうございます</h3>
+            <p style=${{ fontSize: '12px', color: 'rgba(238,242,255,.6)', marginBottom: '16px', textAlign: 'center' }}>この本からの学びを評価しましょう</p>
+            <div style=${{ marginBottom: '20px' }}><${StarRating} value=${rStar} onChange=${setRStar} /></div>
+            <textarea value=${rText} onInput=${function(e) { setRText(e.target.value); }} placeholder="この本から得た最大の学びや感想..." rows="3" className="inp" style=${{ marginBottom: '16px' }}></textarea>
+            <button onClick=${function() {
+              upBook(rateM, { status: 'done', rating: rStar, review: rText });
+              setRateM(null);
+            }} className="btn-grad">読了として保存</button>
+            <div style=${{ height: '8px' }}></div>
+          </div>
+        </div>
+      `}
+    </div>
+  `;
+}
+
+/* ══════════════════════════════════
+   SETTINGS MODAL
+══════════════════════════════════ */
+function SettingsModal(props) {
+  var data = props.data, onUpdate = props.onUpdate, onClose = props.onClose;
+  var _keyInp = useState(data.apiKey || '');
+  var keyInp = _keyInp[0], setKeyInp = _keyInp[1];
+
+  return html`
+    <div className="modal-bg" style=${{ zIndex: '90' }} onClick=${onClose}>
+      <div className="sheet" onClick=${function(e) { e.stopPropagation(); }}>
+        <h3 style=${{ fontWeight: '900', fontSize: '16px', marginBottom: '18px' }}>⚙️ 設定</h3>
+        
+        <div className="glass" style=${{ padding: '16px', marginBottom: '18px', borderRadius: '18px' }}>
+          <p style=${{ fontSize: '12px', fontWeight: '800', color: '#38bdf8', marginBottom: '8px' }}>🤖 AIチャット連携 (Gemini API)</p>
+          <p style=${{ fontSize: '11px', color: 'rgba(238,242,255,.5)', lineHeight: '1.5', marginBottom: '12px' }}>
+            <a href="https://aistudio.google.com/" target="_blank" style=${{ color: '#f472b6', textDecoration: 'none' }}>Google AI Studio</a> から取得したAPIキーを入力すると、パートナー(Cyan)と対話できるようになります。（※キーはブラウザにのみ保存されます）
+          </p>
+          <input 
+            type="password" 
+            value=${keyInp} 
+            onInput=${function(e) { setKeyInp(e.target.value); }} 
+            placeholder="AIzaSy..." 
+            className="inp" 
+            style=${{ marginBottom: '10px', fontSize: '14px', padding: '10px 14px' }} 
+          />
+          <button onClick=${function() { 
+            onUpdate({ apiKey: keyInp }); 
+            alert('APIキーを保存しました！\nパートナータブからCyanに話しかけてみてください。');
+          }} className="btn-ghost" style=${{ background: 'rgba(56,189,248,.1)', color: '#38bdf8', border: 'none' }}>
+            キーを保存して連携する
+          </button>
+        </div>
+
+        <p className="lbl" style=${{ marginBottom: '8px' }}>データ管理</p>
+        <button onClick=${function() { if (confirm('ストリークをリセットしますか？\n本棚データは保持されます。')) { onUpdate({ streak: 0, readDates: [], lastRead: null }); onClose(); } }} className="press" style=${{ width: '100%', padding: '13px', borderRadius: '16px', marginBottom: '16px', background: 'rgba(244,114,182,.08)', border: '1px solid rgba(244,114,182,.18)', color: '#f472b6', fontWeight: '700', fontSize: '13px' }}>ストリークをリセット</button>
+        <button onClick=${onClose} className="btn-grad">閉じる</button>
+        <div style=${{ height: '8px' }}></div>
+      </div>
+    </div>
+  `;
+}
+
+/* ══════════════════════════════════
+   APP ROOT
+══════════════════════════════════ */
+function App() {
+  var _data = useState(function() {
+    var d = loadData();
+    var today = jstISO(), yest = jstYest();
+    if (d.lastRead && d.lastRead !== today && d.lastRead !== yest) {
+      return Object.assign({}, d, { streak: 0, readDates: [] });
+    }
+    return d;
+  });
+  var data = _data[0], setData = _data[1];
+
+  var _tab = useState('quest'); var tab = _tab[0], setTab = _tab[1];
+  var _cfg = useState(false);  var cfg = _cfg[0], setCfg = _cfg[1];
+
+  useEffect(function() { saveData(data); }, [data]);
+
+  var patch = useCallback(function(u) {
+    setData(function(p) { return Object.assign({}, p, u); });
+  }, []);
+
+  var handleRead = useCallback(function() {
+    var today = jstISO();
+    var ns = data.streak + 1;
+    setData(function(p) {
+      var newDates = p.readDates.concat([today]).filter(function(v, i, a) { return a.indexOf(v) === i; });
+      // LINE風にチャット履歴へメッセージを追加
+      var reply = { role: 'assistant', content: cyanMsg(ns), ts: Date.now() };
+      return Object.assign({}, p, { 
+        streak: ns, 
+        lastRead: today, 
+        readDates: newDates,
+        chat: p.chat.concat([reply])
+      });
+    });
+    // パートナータブへ自動遷移
+    setTab('partner');
+    return ns;
+  }, [data.streak]);
+
+  var TABS = [
+    { id: 'quest',   e: SvgIcon.Home,    l: 'ホーム'   },
+    { id: 'partner', e: SvgIcon.Message, l: 'パートナー' },
+    { id: 'archive', e: SvgIcon.Library, l: '本棚' }
+  ];
+
+  return html`
+    <div id="app-inner" style=${{ height: '100%', display: 'flex', flexDirection: 'column', background: '#070b18' }}>
+      <!-- Content panels -->
+      <div style=${{ flex: '1', overflow: 'hidden', position: 'relative' }}>
+        ${TABS.map(function(t) { return html`
+          <div key=${t.id} style=${{ position: 'absolute', inset: '0', display: tab === t.id ? 'flex' : 'none', flexDirection: 'column' }}>
+            ${t.id === 'quest'   && html`<${QuestTab}   data=${data} onRead=${handleRead} onSettings=${function() { setCfg(true); }} />`}
+            ${t.id === 'partner' && html`<${PartnerTab} data=${data} onChat=${function(m) { patch({ chat: m }); }} />`}
+            ${t.id === 'archive' && html`<${ArchiveTab} data=${data} onBooks=${function(b) { patch({ books: b }); }} />`}
+          </div>
+        `; })}
+      </div>
+
+      <!-- Bottom Nav -->
+      <div className="bottom-nav">
+        ${TABS.map(function(t) {
+          var active = tab === t.id;
+          return html`
+            <button key=${t.id} onClick=${function() { setTab(t.id); }} className=${'nav-btn press' + (active ? '' : ' inactive')}>
+              <span style=${{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '22px', height: '22px', marginBottom: '2px', color: active ? '#38bdf8' : 'rgba(238,242,255,.4)' }}>${t.e}</span>
+              <span style=${{ color: active ? '#38bdf8' : 'rgba(238,242,255,.6)' }}>${t.l}</span>
+              ${active && html`<div className="dot"></div>`}
+            </button>
+          `;
+        })}
+      </div>
+
+      ${cfg && html`<${SettingsModal} data=${data} onUpdate=${patch} onClose=${function() { setCfg(false); }} />`}
+    </div>
+  `;
+}
+
+/* ─── MOUNT ─── */
+ReactDOM.createRoot(document.getElementById('root')).render(html`<${App} />`);
+</script>
+</body>
+</html>
+
+
