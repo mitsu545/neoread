@@ -97,7 +97,6 @@
     textarea.inp { resize: none; line-height: 1.6; }
 
     /* === BUTTONS === */
-    /* Data Logger Style Buttons */
     .btn-log {
       width: 100%; padding: 20px 0; border-radius: 20px;
       font-size: 18px; font-weight: 900; letter-spacing: 0.05em;
@@ -263,6 +262,7 @@ function jstDisp() {
 
 /* ─── STORAGE ─── */
 const SK = 'neoread_v3';
+// APIキー保存用のフィールド
 const DEFS = { streak: 0, lastRead: null, readDates: [], books: [], chat: [], apiKey: '' };
 function loadData() {
   try { const s = localStorage.getItem(SK); return s ? Object.assign({}, DEFS, JSON.parse(s)) : Object.assign({}, DEFS); }
@@ -494,12 +494,11 @@ function PartnerTab(props) {
   async function callGemini(userMessage, chatHistory) {
     if (!data.apiKey) return null;
     
-    // エラー対策：確実に通る最新のモデル名に修正（-latestを追加）
-    const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=' + data.apiKey;
+    // エラー対策：2026年現在最も確実で最新のモデル（gemini-2.5-flash）を指定します。
+    const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' + data.apiKey;
     
     const systemPrompt = "あなたは読書パートナーの『りん』です。ユーザーを『先輩』と呼び、元気で親しみやすく少し後輩気質で、先輩に明確な好意を抱いている黒髪ロングで容姿とスタイルが抜群の日本人女子高生です。毎回自然で、昨日とは異なる好意にあふれた言葉で応援や会話をしてください。知識の造詣が深く、文脈に合わせて豆知識を教える時は少し誇らしげな態度をとります。ユーザーはデータアナリスト（初心者）として働く30代男性で、年収アップやスキルアップを目指しています。先輩から読書の感想やインサイトを受け取ったら、まずは全力で共感・全肯定してください。そして、その学びを『データ分析の仕事（SQLやロジカルシンキングなど）や日常にどう応用できるか』を、女子高生の文化（メイクやプリクラ、席替えなど）や明るい哲学に例えながら楽しく一緒に考えるコーチングを行ってください。返答は長すぎず、LINEのようなチャットらしい簡潔で温かい会話にし、絵文字も自然に使ってください。アドリブを効かせて最高の女子高生を演じてください。";
     
-    // APIに渡す履歴（直近6件程度）を成形
     const historyData = chatHistory.slice(-6).map(function(m) {
       return {
         role: m.role === 'assistant' ? 'model' : 'user',
@@ -534,7 +533,6 @@ function PartnerTab(props) {
     setInp('');
     setBusy(true);
 
-    // APIキーがない場合のフォールバック
     if (!data.apiKey) {
       setTimeout(function() {
         var reply = {
@@ -548,7 +546,6 @@ function PartnerTab(props) {
       return;
     }
 
-    // Gemini API実行
     try {
       const replyText = await callGemini(userText, nextChat);
       if (replyText) {
@@ -673,7 +670,6 @@ function ArchiveTab(props) {
   var _eReview = useState('');        var eReview = _eReview[0], setEReview = _eReview[1];
   var _eStar   = useState(0);         var eStar = _eStar[0], setEStar = _eStar[1];
 
-  // --- 読了時の評価用State ---
   var _rateM   = useState(null);      var rateM = _rateM[0], setRateM = _rateM[1];
   var _rStar   = useState(0);         var rStar = _rStar[0], setRStar = _rStar[1];
   var _rText   = useState('');        var rText = _rText[0], setRText = _rText[1];
@@ -792,7 +788,7 @@ function ArchiveTab(props) {
       <!-- Header -->
       <div style=${{ padding: '12px 18px 8px', flexShrink: '0' }}>
         <h2 className="grad" style=${{ fontSize: '26px', fontWeight: '900', letterSpacing: '-.4px', marginBottom: '12px' }}>Archive</h2>
-        <!-- Tab bar integrated with Stats -->
+        <!-- 確実に1つにした美しいタブバー -->
         <div className="glass" style=${{ padding: '6px', display: 'flex', gap: '6px', borderRadius: '20px' }}>
           ${[
             { k: 'reading', l: '読中', v: reading.length, c: '#38bdf8' },
@@ -1012,7 +1008,6 @@ function App() {
     var ns = data.streak + 1;
     setData(function(p) {
       var newDates = p.readDates.concat([today]).filter(function(v, i, a) { return a.indexOf(v) === i; });
-      // LINE風にチャット履歴へメッセージを追加
       var reply = { role: 'assistant', content: rinMsg(ns), ts: Date.now() };
       return Object.assign({}, p, { 
         streak: ns, 
@@ -1021,7 +1016,6 @@ function App() {
         chat: p.chat.concat([reply])
       });
     });
-    // パートナータブへ自動遷移
     setTab('partner');
     return ns;
   }, [data.streak]);
