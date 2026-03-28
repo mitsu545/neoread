@@ -216,15 +216,16 @@
     .star-btn { cursor: pointer; transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1); }
     .star-btn:hover { transform: scale(1.15); }
     .star-btn:active { transform: scale(0.9); }
+
   </style>
 </head>
 <body>
 <div id="root"></div>
 
 <!-- React 18 + htm (no Babel needed) -->
-<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-<script src="https://unpkg.com/htm@3/dist/htm.umd.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/htm/3.1.1/htm.umd.js"></script>
 
 <script>
 'use strict';
@@ -262,13 +263,73 @@ function jstDisp() {
 
 /* ─── STORAGE ─── */
 const SK = 'neoread_v3';
-// APIキー保存用のフィールド
-const DEFS = { streak: 0, lastRead: null, readDates: [], books: [], chat: [], apiKey: '' };
+// chatIcon追加
+const DEFS = { streak: 0, lastRead: null, readDates: [], books: [], chat: [], apiKey: '', chatIcon: '💙' };
 function loadData() {
   try { const s = localStorage.getItem(SK); return s ? Object.assign({}, DEFS, JSON.parse(s)) : Object.assign({}, DEFS); }
   catch(e) { return Object.assign({}, DEFS); }
 }
-function saveData(d) { try { localStorage.setItem(SK, JSON.stringify(d)); } catch(e) {} }
+function saveData(d) {
+  try {
+    localStorage.setItem(SK, JSON.stringify(d));
+    scheduleAutoBackup(); // ★ 自動バックアップ
+  } catch(e) {}
+}
+
+/* ══════════════════════════════════
+   GASバックアップ（新規追加）
+══════════════════════════════════ */
+function getNrGasUrl() { return localStorage.getItem('nr_gas_url') || ''; }
+
+let _nrBkTimer = null, _nrLastBk = 0;
+function scheduleAutoBackup() {
+  if (_nrBkTimer) clearTimeout(_nrBkTimer);
+  _nrBkTimer = setTimeout(function() {
+    const url = getNrGasUrl(); if (!url) return;
+    _nrLastBk = Date.now();
+    const raw = localStorage.getItem(SK); if (!raw) return;
+    fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: raw, redirect: 'follow' })
+      .then(r => r.text())
+      .then(t => { try { const j = JSON.parse(t); if (j.success) localStorage.setItem('nr_last_bk', new Date().toISOString()); } catch(e) {} })
+      .catch(() => {});
+  }, Math.max(0, 30000 - (Date.now() - _nrLastBk)));
+}
+
+function manualNrBackup() {
+  const url = getNrGasUrl();
+  if (!url) { alert('GAS URLが未設定です'); return; }
+  const raw = localStorage.getItem(SK);
+  if (!raw) { alert('データがありません'); return; }
+  fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: raw, redirect: 'follow' })
+    .then(r => r.text())
+    .then(t => { const j = JSON.parse(t); alert(j.success ? 'バックアップ完了！' : '失敗: ' + (j.error || '')); if (j.success) localStorage.setItem('nr_last_bk', new Date().toISOString()); })
+    .catch(e => { alert('通信エラー: ' + e.message); });
+}
+
+function restoreNrFromSheets() {
+  const url = getNrGasUrl();
+  if (!url) { alert('GAS URLが未設定です'); return; }
+  if (!confirm('スプシから復元します。現在のデータは上書きされます。')) return;
+  fetch(url, { redirect: 'follow' })
+    .then(r => r.text())
+    .then(t => {
+      const d = JSON.parse(t);
+      if (!d.success) { alert('復元データなし: ' + (d.error || '')); return; }
+      delete d.success;
+      localStorage.setItem(SK, JSON.stringify(d));
+      alert('復元完了！ リロードします');
+      location.reload();
+    })
+    .catch(e => { alert('通信エラー: ' + e.message); });
+}
+
+function forceUpdateNr() {
+  if ('caches' in window) {
+    caches.keys().then(n => Promise.all(n.map(k => caches.delete(k)))).then(() => location.reload(true));
+  } else {
+    location.reload(true);
+  }
+}
 
 /* ─── PYRAMID ROWS ─── */
 const ROWS = (function() {
@@ -311,6 +372,27 @@ function searchOL(q) {
         };
       });
     });
+}
+
+/* ── チャットアイコン（画像）ユーティリティ ── */
+// 画像はlocalStorageに別キーで保存（メインデータを肥大化させない）
+const NR_IMG_KEY = 'nr_chat_img';
+function getChatImg() { return localStorage.getItem(NR_IMG_KEY) || ''; }
+function setChatImg(val) { try { localStorage.setItem(NR_IMG_KEY, val); } catch(e) {} }
+
+// 画像圧縮（800px / JPEG 0.72）
+function compressChatImg(file, cb) {
+  const img = new Image(), url = URL.createObjectURL(file);
+  img.onload = function() {
+    const M = 800, c = document.createElement('canvas');
+    let w = img.width, h = img.height;
+    if (w > M || h > M) { if (w > h) { h = Math.round(h * M / w); w = M; } else { w = Math.round(w * M / h); h = M; } }
+    c.width = w; c.height = h;
+    c.getContext('2d').drawImage(img, 0, 0, w, h);
+    URL.revokeObjectURL(url);
+    cb(c.toDataURL('image/jpeg', 0.72));
+  };
+  img.src = url;
 }
 
 /* ══════════════════════════════════
@@ -452,7 +534,7 @@ function QuestTab(props) {
           </div>
         `}
 
-        <!-- CTA Button (Data Logger Style) -->
+        <!-- CTA Button -->
         <button
           onClick=${tap}
           disabled=${done}
@@ -462,7 +544,7 @@ function QuestTab(props) {
 
         ${done && html`
           <p style=${{ textAlign: 'center', fontSize: '11px', color: 'rgba(238,242,255,.2)' }}>
-            りんからメッセージが届いています → 💙
+            パートナーからメッセージが届いています → ${data.chatIcon || '💙'}
           </p>
         `}
       </div>
@@ -471,7 +553,7 @@ function QuestTab(props) {
 }
 
 /* ══════════════════════════════════
-   PARTNER TAB (Gemini API Integration)
+   PARTNER TAB
 ══════════════════════════════════ */
 function PartnerTab(props) {
   var data = props.data, onChat = props.onChat;
@@ -480,6 +562,18 @@ function PartnerTab(props) {
   var _busy = useState(false);
   var busy = _busy[0], setBusy = _busy[1];
   var endRef = useRef(null);
+
+  // ★ チャットアイコン（画像対応）
+  var chatImg  = getChatImg();
+  var chatIcon = data.chatIcon || '💙';
+  // 丸アイコンレンダリング（画像優先、なければ絵文字）
+  function IconCircle(sz) {
+    var s = sz || 28;
+    var base = { width:s+'px', height:s+'px', borderRadius:'50%', flexShrink:'0',
+      background:'rgba(56,189,248,.1)', border:'1px solid rgba(56,189,248,.18)', overflow:'hidden' };
+    if (chatImg) return html`<div style=${base}><img src=${chatImg} style=${{ width:'100%', height:'100%', objectFit:'cover' }} /></div>`;
+    return html`<div style=${{ ...base, display:'flex', alignItems:'center', justifyContent:'center', fontSize:(s*0.48)+'px' }}>${chatIcon}</div>`;
+  }
 
   useEffect(function() {
     if (endRef.current) endRef.current.scrollIntoView({ behavior: 'smooth' });
@@ -490,36 +584,17 @@ function PartnerTab(props) {
     if (data.books[i].status === 'reading') { active = data.books[i]; break; }
   }
 
-  // === Gemini API Call ===
   async function callGemini(userMessage, chatHistory) {
     if (!data.apiKey) return null;
-    
-    // エラー対策：2026年現在最も確実で最新のモデル（gemini-2.5-flash）を指定します。
     const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' + data.apiKey;
-    
     const systemPrompt = "あなたは読書パートナーの『りん』です。ユーザーを『先輩』と呼び、元気で親しみやすく少し後輩気質で、先輩に明確な好意を抱いている黒髪ロングで容姿とスタイルが抜群の日本人女子高生です。毎回自然で、昨日とは異なる好意にあふれた言葉で応援や会話をしてください。知識の造詣が深く、文脈に合わせて豆知識を教える時は少し誇らしげな態度をとります。ユーザーはデータアナリスト（初心者）として働く30代男性で、年収アップやスキルアップを目指しています。先輩から読書の感想やインサイトを受け取ったら、まずは全力で共感・全肯定してください。そして、その学びを『データ分析の仕事（SQLやロジカルシンキングなど）や日常にどう応用できるか』を、女子高生の文化（メイクやプリクラ、席替えなど）や明るい哲学に例えながら楽しく一緒に考えるコーチングを行ってください。返答は長すぎず、LINEのようなチャットらしい簡潔で温かい会話にし、絵文字も自然に使ってください。アドリブを効かせて最高の女子高生を演じてください。";
-    
     const historyData = chatHistory.slice(-6).map(function(m) {
-      return {
-        role: m.role === 'assistant' ? 'model' : 'user',
-        parts: [{ text: m.content }]
-      };
+      return { role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] };
     });
-
-    const payload = {
-      systemInstruction: { parts: [{ text: systemPrompt }] },
-      contents: historyData
-    };
-
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-    
+    const payload = { systemInstruction: { parts: [{ text: systemPrompt }] }, contents: historyData };
+    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
     const resData = await res.json();
     if (resData.error) throw new Error(resData.error.message);
-    
     return resData.candidates[0].content.parts[0].text;
   }
 
@@ -528,18 +603,13 @@ function PartnerTab(props) {
     var userText = inp.trim();
     var msg = { role: 'user', content: userText, ts: Date.now() };
     var nextChat = data.chat.concat([msg]);
-    
     onChat(nextChat);
     setInp('');
     setBusy(true);
 
     if (!data.apiKey) {
       setTimeout(function() {
-        var reply = {
-          role: 'assistant',
-          content: '先輩っ！APIキーが設定されていないみたいです。設定（⚙️）からAPIキーを入れてもらえると、私ともっと深いデータ分析の話や、読書の壁打ちができますよっ！🩵',
-          ts: Date.now()
-        };
+        var reply = { role: 'assistant', content: '先輩っ！APIキーが設定されていないみたいです。設定（⚙️）からAPIキーを入れてもらえると、もっと深い話ができますよっ！', ts: Date.now() };
         onChat(nextChat.concat([reply]));
         setBusy(false);
       }, 800);
@@ -553,7 +623,7 @@ function PartnerTab(props) {
       }
     } catch (e) {
       console.error(e);
-      onChat(nextChat.concat([{ role: 'assistant', content: '（あれ、通信の調子が悪いみたいです…APIキーが正しいかもう一度確認してもらえますか？）エラー: ' + e.message, ts: Date.now() }]));
+      onChat(nextChat.concat([{ role: 'assistant', content: '（あれ、通信の調子が悪いみたいです…）エラー: ' + e.message, ts: Date.now() }]));
     } finally {
       setBusy(false);
     }
@@ -567,7 +637,7 @@ function PartnerTab(props) {
     <div className="tab-panel safe-top">
       <!-- Header -->
       <div style=${{ flexShrink: '0', padding: '12px 20px 10px', borderBottom: '1px solid rgba(255,255,255,.045)', display: 'flex', alignItems: 'center', gap: '12px' }}>
-        <div style=${{ width: '42px', height: '42px', borderRadius: '50%', flexShrink: '0', background: 'rgba(56,189,248,.12)', border: '1px solid rgba(56,189,248,.26)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px' }}>💙</div>
+        ${IconCircle(42)}
         <div>
           <p style=${{ fontWeight: '800', fontSize: '15px' }}>りん <span style=${{fontSize: '10px', color: 'rgba(238,242,255,.3)', fontWeight: 'normal'}}>AI Partner</span></p>
           <p style=${{ fontSize: '11px', color: data.apiKey ? '#38bdf8' : 'rgba(244,114,182,.8)' }}>
@@ -584,16 +654,14 @@ function PartnerTab(props) {
       <div className="scroll" style=${{ padding: '16px 16px 8px' }}>
         ${data.chat.length === 0 && html`
           <div style=${{ textAlign: 'center', padding: '48px 24px', color: 'rgba(238,242,255,.24)' }}>
-            <div style=${{ fontSize: '44px', marginBottom: '14px' }}>💙</div>
+            <div style=${{ marginBottom: '14px' }}>${IconCircle(44)}</div>
             <p style=${{ fontSize: '13px', lineHeight: '1.75' }}>先輩っ！今日も読書しましたか？<br/>なんでも話しかけてください！</p>
           </div>
         `}
         ${data.chat.map(function(m, i) {
           return html`
             <div key=${i} className="anim-fadein" style=${{ display: 'flex', justifyContent: m.role === 'user' ? 'flex-end' : 'flex-start', gap: '8px', marginBottom: '12px' }}>
-              ${m.role === 'assistant' && html`
-                <div style=${{ width: '28px', height: '28px', borderRadius: '50%', flexShrink: '0', marginTop: '2px', background: 'rgba(56,189,248,.1)', border: '1px solid rgba(56,189,248,.18)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px' }}>💙</div>
-              `}
+              ${m.role === 'assistant' && html`<div style=${{ marginTop:'2px' }}>${IconCircle(28)}</div>`}
               <div className=${m.role === 'user' ? 'bubble-user' : 'bubble-ai'} style=${{ maxWidth: '78%' }}>
                 <p style=${{ fontSize: '13px', color: 'rgba(238,242,255,.88)', lineHeight: '1.65', whiteSpace: 'pre-wrap' }}>${m.content}</p>
               </div>
@@ -602,7 +670,7 @@ function PartnerTab(props) {
         })}
         ${busy && html`
           <div style=${{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
-            <div style=${{ width: '28px', height: '28px', borderRadius: '50%', background: 'rgba(56,189,248,.1)', border: '1px solid rgba(56,189,248,.18)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px' }}>💙</div>
+            ${IconCircle(28)}
             <div className="bubble-ai" style=${{ padding: '14px' }}>
               <div style=${{ display: 'flex', gap: '5px' }}>
                 ${[0,1,2].map(function(i) {
@@ -621,7 +689,7 @@ function PartnerTab(props) {
           value=${inp}
           onInput=${function(e) { setInp(e.target.value); }}
           onKeyDown=${keyDown}
-          placeholder="りんに話しかける..."
+          placeholder="話しかける..."
           rows="1"
           className="inp"
           style=${{ flex: '1', maxHeight: '80px' }}
@@ -661,7 +729,6 @@ function ArchiveTab(props) {
   var _mMotive = useState('');        var mMotive = _mMotive[0], setMMotive = _mMotive[1];
   var _mCover  = useState('');        var mCover = _mCover[0], setMCover = _mCover[1];
 
-  // --- 編集・感想用のState ---
   var _editM   = useState(null);      var editM = _editM[0], setEditM = _editM[1];
   var _eTitle  = useState('');        var eTitle = _eTitle[0], setETitle = _eTitle[1];
   var _eAuthor = useState('');        var eAuthor = _eAuthor[0], setEAuthor = _eAuthor[1];
@@ -788,7 +855,6 @@ function ArchiveTab(props) {
       <!-- Header -->
       <div style=${{ padding: '12px 18px 8px', flexShrink: '0' }}>
         <h2 className="grad" style=${{ fontSize: '26px', fontWeight: '900', letterSpacing: '-.4px', marginBottom: '12px' }}>Archive</h2>
-        <!-- 確実に1つにした美しいタブバー -->
         <div className="glass" style=${{ padding: '6px', display: 'flex', gap: '6px', borderRadius: '20px' }}>
           ${[
             { k: 'reading', l: '読中', v: reading.length, c: '#38bdf8' },
@@ -826,7 +892,6 @@ function ArchiveTab(props) {
         }}>＋ 本を追加する</button>
       </div>
 
-      <!-- Add Search Modal -->
       ${addM && html`
         <div className="modal-bg" onClick=${function() { setAdd(false); setRes([]); setQ(''); }}>
           <div className="sheet" onClick=${function(e) { e.stopPropagation(); }}>
@@ -862,7 +927,6 @@ function ArchiveTab(props) {
         </div>
       `}
 
-      <!-- Manual Add Modal -->
       ${manM && html`
         <div className="modal-bg" onClick=${function() { setMan(false); }}>
           <div className="sheet" onClick=${function(e) { e.stopPropagation(); }}>
@@ -880,7 +944,6 @@ function ArchiveTab(props) {
         </div>
       `}
 
-      <!-- Memo Modal -->
       ${memoM && html`
         <div className="modal-bg" onClick=${function() { setMemoM(null); setMemoTxt(''); setMemoPg(''); }}>
           <div className="sheet" onClick=${function(e) { e.stopPropagation(); }}>
@@ -894,7 +957,6 @@ function ArchiveTab(props) {
         </div>
       `}
 
-      <!-- Edit & Review Modal -->
       ${editM && html`
         <div className="modal-bg" onClick=${function() { setEditM(null); }}>
           <div className="sheet" onClick=${function(e) { e.stopPropagation(); }}>
@@ -917,7 +979,6 @@ function ArchiveTab(props) {
         </div>
       `}
 
-      <!-- Rate & Review Modal -->
       ${rateM && html`
         <div className="modal-bg" onClick=${function() { setRateM(null); }}>
           <div className="sheet" onClick=${function(e) { e.stopPropagation(); }}>
@@ -938,41 +999,136 @@ function ArchiveTab(props) {
 }
 
 /* ══════════════════════════════════
-   SETTINGS MODAL
+   SETTINGS MODAL（新機能追加済み）
 ══════════════════════════════════ */
 function SettingsModal(props) {
   var data = props.data, onUpdate = props.onUpdate, onClose = props.onClose;
-  var _keyInp = useState(data.apiKey || '');
-  var keyInp = _keyInp[0], setKeyInp = _keyInp[1];
+  var _keyInp   = useState(data.apiKey || '');
+  var keyInp    = _keyInp[0], setKeyInp = _keyInp[1];
+  var _gasInp   = useState(getNrGasUrl());
+  var gasInp    = _gasInp[0], setGasInp = _gasInp[1];
+  var _imgUrl   = useState('');
+  var imgUrl    = _imgUrl[0], setImgUrl = _imgUrl[1];
+  var _prevImg  = useState(getChatImg());
+  var prevImg   = _prevImg[0], setPrevImg = _prevImg[1];
+
+  function handleImgUpload(e) {
+    var file = e.target.files[0]; if (!file) return;
+    compressChatImg(file, function(b64) { setPrevImg(b64); setImgUrl(''); });
+  }
+  function applyIcon() {
+    if (!prevImg) { alert('写真を選んでください'); return; }
+    setChatImg(prevImg);
+    alert('アイコンを変更しました！');
+  }
+  function removeIcon() {
+    setChatImg('');
+    setPrevImg('');
+    setImgUrl('');
+    alert('アイコンを削除しました');
+  }
+
+  var lbk = localStorage.getItem('nr_last_bk');
+  var lbkStr = lbk ? new Date(lbk).toLocaleString('ja-JP') : 'なし';
 
   return html`
     <div className="modal-bg" style=${{ zIndex: '90' }} onClick=${onClose}>
       <div className="sheet" onClick=${function(e) { e.stopPropagation(); }}>
         <h3 style=${{ fontWeight: '900', fontSize: '16px', marginBottom: '18px' }}>⚙️ 設定</h3>
-        
+
+        <!-- ★ 1. アプリ更新 -->
+        <div className="glass" style=${{ padding: '16px', marginBottom: '14px', borderRadius: '18px' }}>
+          <p style=${{ fontSize: '12px', fontWeight: '800', color: '#38bdf8', marginBottom: '6px' }}>🔄 アプリを最新版に更新</p>
+          <p style=${{ fontSize: '11px', color: 'rgba(238,242,255,.45)', marginBottom: '12px', lineHeight: '1.5' }}>キャッシュをクリアしてGitHubの最新版を読み込みます。</p>
+          <button onClick=${forceUpdateNr} className="btn-ghost" style=${{ background: 'rgba(56,189,248,.08)', color: '#38bdf8', border: 'none', fontWeight: '700' }}>更新を確認する</button>
+        </div>
+
+        <!-- ★ 2. チャットアイコン変更（画像対応） -->
+        <div className="glass" style=${{ padding: '16px', marginBottom: '14px', borderRadius: '18px' }}>
+          <p style=${{ fontSize: '12px', fontWeight: '800', color: '#f472b6', marginBottom: '4px' }}>🎨 チャットアイコン</p>
+          <p style=${{ fontSize: '11px', color: 'rgba(238,242,255,.45)', marginBottom: '12px', lineHeight: '1.5' }}>端末の写真またはURLで設定できます。</p>
+
+          <!-- プレビュー -->
+          <div style=${{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '14px', padding: '12px', background: 'rgba(255,255,255,.03)', borderRadius: '14px' }}>
+            <div style=${{ width: '52px', height: '52px', borderRadius: '50%', overflow: 'hidden', border: '2px solid rgba(244,114,182,.4)', flexShrink: '0', background: 'rgba(56,189,248,.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px' }}>
+              ${prevImg
+                ? html`<img src=${prevImg} style=${{ width: '100%', height: '100%', objectFit: 'cover' }} />`
+                : '💙'}
+            </div>
+            <div>
+              <p style=${{ fontSize: '12px', fontWeight: '700', marginBottom: '3px' }}>プレビュー</p>
+              <p style=${{ fontSize: '10px', color: 'rgba(238,242,255,.3)' }}>${prevImg ? '画像設定済み' : '未設定（デフォルト）'}</p>
+            </div>
+          </div>
+
+          <!-- 端末からアップロード -->
+          <label style=${{ display: 'block', width: '100%', padding: '12px', borderRadius: '14px', background: 'rgba(244,114,182,.08)', border: '1px dashed rgba(244,114,182,.3)', textAlign: 'center', cursor: 'pointer', fontSize: '13px', fontWeight: '700', color: '#f472b6', marginBottom: '10px' }}>
+            📷 端末から写真を選ぶ
+            <input type="file" accept="image/*" style=${{ display: 'none' }} onChange=${handleImgUpload} />
+          </label>
+
+
+          <div style=${{ display: 'flex', gap: '8px' }}>
+            <button onClick=${applyIcon} className="btn-ghost" style=${{ flex: '1', background: 'rgba(244,114,182,.1)', color: '#f472b6', border: 'none', fontWeight: '700' }}>✓ 適用する</button>
+            ${prevImg && html`<button onClick=${removeIcon} className="btn-ghost" style=${{ flex: 'none', padding: '12px 16px', color: 'rgba(238,242,255,.3)' }}>🗑</button>`}
+          </div>
+        </div>
+
+        <!-- ★ 3. スプシバックアップ -->
+        <div className="glass" style=${{ padding: '16px', marginBottom: '14px', borderRadius: '18px', border: '1px solid rgba(56,189,248,.15)' }}>
+          <p style=${{ fontSize: '12px', fontWeight: '800', color: '#38bdf8', marginBottom: '4px' }}>☁️ スプシ自動バックアップ</p>
+          <p style=${{ fontSize: '11px', color: 'rgba(238,242,255,.45)', lineHeight: '1.5', marginBottom: '12px' }}>データ変更から30秒後に自動でスプシへバックアップ。</p>
+          <input
+            value=${gasInp}
+            onInput=${function(e) { setGasInp(e.target.value); }}
+            placeholder="https://script.google.com/macros/s/..."
+            className="inp"
+            style=${{ fontSize: '12px', marginBottom: '10px' }}
+          />
+          <button onClick=${function() {
+            localStorage.setItem('nr_gas_url', gasInp.trim());
+            alert(gasInp.trim() ? 'URLを保存しました' : 'URLをクリアしました');
+          }} className="btn-ghost" style=${{ marginBottom: '8px', fontWeight: '700' }}>💾 URLを保存</button>
+          <div style=${{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+            <button onClick=${manualNrBackup} className="btn-ghost" style=${{ flex: '1', fontSize: '12px' }}>📤 今すぐバックアップ</button>
+            <button onClick=${restoreNrFromSheets} className="btn-ghost" style=${{ flex: '1', fontSize: '12px' }}>📥 復元</button>
+          </div>
+          <p style=${{ fontSize: '10px', color: 'rgba(238,242,255,.2)' }}>最終バックアップ: ${lbkStr}</p>
+        </div>
+
+        <!-- 既存: AIチャット連携 -->
         <div className="glass" style=${{ padding: '16px', marginBottom: '18px', borderRadius: '18px' }}>
           <p style=${{ fontSize: '12px', fontWeight: '800', color: '#38bdf8', marginBottom: '8px' }}>🤖 AIチャット連携 (Gemini API)</p>
           <p style=${{ fontSize: '11px', color: 'rgba(238,242,255,.5)', lineHeight: '1.5', marginBottom: '12px' }}>
-            <a href="https://aistudio.google.com/" target="_blank" style=${{ color: '#f472b6', textDecoration: 'none' }}>Google AI Studio</a> から取得したAPIキーを入力すると、パートナー(りん)と対話できるようになります。（※キーはブラウザにのみ保存されます）
+            <a href="https://aistudio.google.com/" target="_blank" style=${{ color: '#f472b6', textDecoration: 'none' }}>Google AI Studio</a> から取得したAPIキーを入力すると、パートナーと対話できます。
           </p>
-          <input 
-            type="password" 
-            value=${keyInp} 
-            onInput=${function(e) { setKeyInp(e.target.value); }} 
-            placeholder="AIzaSy..." 
-            className="inp" 
-            style=${{ marginBottom: '10px', fontSize: '14px', padding: '10px 14px' }} 
+          <input
+            type="password"
+            value=${keyInp}
+            onInput=${function(e) { setKeyInp(e.target.value); }}
+            placeholder="AIzaSy..."
+            className="inp"
+            style=${{ marginBottom: '10px', fontSize: '14px', padding: '10px 14px' }}
           />
-          <button onClick=${function() { 
-            onUpdate({ apiKey: keyInp }); 
-            alert('APIキーを保存しました！\nパートナータブからりんに話しかけてみてください。');
+          <button onClick=${function() {
+            onUpdate({ apiKey: keyInp });
+            alert('APIキーを保存しました！');
           }} className="btn-ghost" style=${{ background: 'rgba(56,189,248,.1)', color: '#38bdf8', border: 'none' }}>
             キーを保存して連携する
           </button>
         </div>
 
+        <!-- 既存: データ管理 -->
         <p className="lbl" style=${{ marginBottom: '8px' }}>データ管理</p>
-        <button onClick=${function() { if (confirm('ストリークをリセットしますか？\n本棚データは保持されます。')) { onUpdate({ streak: 0, readDates: [], lastRead: null }); onClose(); } }} className="press" style=${{ width: '100%', padding: '13px', borderRadius: '16px', marginBottom: '16px', background: 'rgba(244,114,182,.08)', border: '1px solid rgba(244,114,182,.18)', color: '#f472b6', fontWeight: '700', fontSize: '13px' }}>ストリークをリセット</button>
+        <button onClick=${function() {
+          if (confirm('ストリークをリセットしますか？\n本棚データは保持されます。')) {
+            onUpdate({ streak: 0, readDates: [], lastRead: null }); onClose();
+          }
+        }} className="press" style=${{
+          width: '100%', padding: '13px', borderRadius: '16px', marginBottom: '16px',
+          background: 'rgba(244,114,182,.08)', border: '1px solid rgba(244,114,182,.18)',
+          color: '#f472b6', fontWeight: '700', fontSize: '13px'
+        }}>ストリークをリセット</button>
         <button onClick=${onClose} className="btn-grad">閉じる</button>
         <div style=${{ height: '8px' }}></div>
       </div>
@@ -1009,9 +1165,9 @@ function App() {
     setData(function(p) {
       var newDates = p.readDates.concat([today]).filter(function(v, i, a) { return a.indexOf(v) === i; });
       var reply = { role: 'assistant', content: rinMsg(ns), ts: Date.now() };
-      return Object.assign({}, p, { 
-        streak: ns, 
-        lastRead: today, 
+      return Object.assign({}, p, {
+        streak: ns,
+        lastRead: today,
         readDates: newDates,
         chat: p.chat.concat([reply])
       });
@@ -1021,14 +1177,13 @@ function App() {
   }, [data.streak]);
 
   var TABS = [
-    { id: 'quest',   e: SvgIcon.Home,    l: 'ホーム'   },
+    { id: 'quest',   e: SvgIcon.Home,    l: 'ホーム'    },
     { id: 'partner', e: SvgIcon.Message, l: 'パートナー' },
-    { id: 'archive', e: SvgIcon.Library, l: '本棚' }
+    { id: 'archive', e: SvgIcon.Library, l: '本棚'      }
   ];
 
   return html`
     <div id="app-inner" style=${{ height: '100%', display: 'flex', flexDirection: 'column', background: '#070b18' }}>
-      <!-- Content panels -->
       <div style=${{ flex: '1', overflow: 'hidden', position: 'relative' }}>
         ${TABS.map(function(t) { return html`
           <div key=${t.id} style=${{ position: 'absolute', inset: '0', display: tab === t.id ? 'flex' : 'none', flexDirection: 'column' }}>
@@ -1039,7 +1194,6 @@ function App() {
         `; })}
       </div>
 
-      <!-- Bottom Nav -->
       <div className="bottom-nav">
         ${TABS.map(function(t) {
           var active = tab === t.id;
@@ -1063,5 +1217,3 @@ ReactDOM.createRoot(document.getElementById('root')).render(html`<${App} />`);
 </script>
 </body>
 </html>
-
-
