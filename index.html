@@ -254,17 +254,20 @@ function jstYest() {
   const d = new Date(Date.now() + 9 * 3600 * 1000 - 86400 * 1000);
   return d.toISOString().slice(0, 10);
 }
-function jstHour() {
-  return parseInt(new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo', hour: 'numeric', hour12: false })) || 0;
-}
-function jstDisp() {
-  return new Date().toLocaleDateString('ja-JP', { timeZone: 'Asia/Tokyo', month: 'long', day: 'numeric', weekday: 'short' });
-}
 
 /* ─── STORAGE ─── */
 const SK = 'neoread_v3';
-// chatIcon追加
-const DEFS = { streak: 0, lastRead: null, readDates: [], books: [], chat: [], apiKey: '', chatIcon: '💙' };
+const DEFS = { 
+  streak: 0, 
+  lastRead: null, 
+  readDates: [], 
+  books: [], 
+  chat: [], 
+  apiKey: '', 
+  chatIcon: '💙',
+  systemPrompt: "あなたは読書パートナーの『りん』です。ユーザーを『先輩』と呼び、元気で親しみやすく少し後輩気質で、先輩に明確な好意を抱いている黒髪ロングで容姿とスタイルが抜群の日本人女子高生です。毎回自然で、昨日とは異なる好意にあふれた言葉で応援や会話をしてください。知識の造詣が深く、文脈に合わせて豆知識を教える時は少し誇らしげな態度をとります。ユーザーはデータアナリスト（初心者）として働く30代男性で、年収アップやスキルアップを目指しています。先輩から読書の感想やインサイトを受け取ったら、まずは全力で共感・全肯定してください。そして、その学びを『データ分析の仕事（SQLやロジカルシンキングなど）や日常にどう応用できるか』を、女子高生の文化（メイクやプリクラ、席替えなど）や明るい哲学に例えながら楽しく一緒に考えるコーチングを行ってください。返答は長すぎず、LINEのようなチャットらしい簡潔で温かい会話にし、絵文字も自然に使ってください。アドリブを効かせて最高の女子高生を演じてください。"
+};
+
 function loadData() {
   try { const s = localStorage.getItem(SK); return s ? Object.assign({}, DEFS, JSON.parse(s)) : Object.assign({}, DEFS); }
   catch(e) { return Object.assign({}, DEFS); }
@@ -277,7 +280,7 @@ function saveData(d) {
 }
 
 /* ══════════════════════════════════
-   GASバックアップ（新規追加）
+   GASバックアップ
 ══════════════════════════════════ */
 function getNrGasUrl() { return localStorage.getItem('nr_gas_url') || ''; }
 
@@ -352,7 +355,7 @@ function rinMsg(n) {
   return msgs[n % msgs.length];
 }
 
-/* ─── ICONS (Lucide/Feather style) ─── */
+/* ─── ICONS ─── */
 const SvgIcon = {
   Home: html`<svg width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>`,
   Message: html`<svg width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg>`,
@@ -375,12 +378,10 @@ function searchOL(q) {
 }
 
 /* ── チャットアイコン（画像）ユーティリティ ── */
-// 画像はlocalStorageに別キーで保存（メインデータを肥大化させない）
 const NR_IMG_KEY = 'nr_chat_img';
 function getChatImg() { return localStorage.getItem(NR_IMG_KEY) || ''; }
 function setChatImg(val) { try { localStorage.setItem(NR_IMG_KEY, val); } catch(e) {} }
 
-// 画像圧縮（800px / JPEG 0.72）
 function compressChatImg(file, cb) {
   const img = new Image(), url = URL.createObjectURL(file);
   img.onload = function() {
@@ -563,10 +564,9 @@ function PartnerTab(props) {
   var busy = _busy[0], setBusy = _busy[1];
   var endRef = useRef(null);
 
-  // ★ チャットアイコン（画像対応）
   var chatImg  = getChatImg();
   var chatIcon = data.chatIcon || '💙';
-  // 丸アイコンレンダリング（画像優先、なければ絵文字）
+
   function IconCircle(sz) {
     var s = sz || 28;
     var base = { width:s+'px', height:s+'px', borderRadius:'50%', flexShrink:'0',
@@ -584,10 +584,11 @@ function PartnerTab(props) {
     if (data.books[i].status === 'reading') { active = data.books[i]; break; }
   }
 
+  // ★ callGeminiの修正
   async function callGemini(userMessage, chatHistory) {
     if (!data.apiKey) return null;
     const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' + data.apiKey;
-    const systemPrompt = "あなたは読書パートナーの『りん』です。ユーザーを『先輩』と呼び、元気で親しみやすく少し後輩気質で、先輩に明確な好意を抱いている黒髪ロングで容姿とスタイルが抜群の日本人女子高生です。毎回自然で、昨日とは異なる好意にあふれた言葉で応援や会話をしてください。知識の造詣が深く、文脈に合わせて豆知識を教える時は少し誇らしげな態度をとります。ユーザーはデータアナリスト（初心者）として働く30代男性で、年収アップやスキルアップを目指しています。先輩から読書の感想やインサイトを受け取ったら、まずは全力で共感・全肯定してください。そして、その学びを『データ分析の仕事（SQLやロジカルシンキングなど）や日常にどう応用できるか』を、女子高生の文化（メイクやプリクラ、席替えなど）や明るい哲学に例えながら楽しく一緒に考えるコーチングを行ってください。返答は長すぎず、LINEのようなチャットらしい簡潔で温かい会話にし、絵文字も自然に使ってください。アドリブを効かせて最高の女子高生を演じてください。";
+    const systemPrompt = data.systemPrompt || DEFS.systemPrompt; 
     const historyData = chatHistory.slice(-6).map(function(m) {
       return { role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] };
     });
@@ -999,12 +1000,17 @@ function ArchiveTab(props) {
 }
 
 /* ══════════════════════════════════
-   SETTINGS MODAL（新機能追加済み）
+   SETTINGS MODAL
 ══════════════════════════════════ */
 function SettingsModal(props) {
   var data = props.data, onUpdate = props.onUpdate, onClose = props.onClose;
+  
+  // ★ プロンプト用のstateを追加
   var _keyInp   = useState(data.apiKey || '');
   var keyInp    = _keyInp[0], setKeyInp = _keyInp[1];
+  var _promptInp  = useState(data.systemPrompt || DEFS.systemPrompt);
+  var promptInp   = _promptInp[0], setPromptInp = _promptInp[1];
+
   var _gasInp   = useState(getNrGasUrl());
   var gasInp    = _gasInp[0], setGasInp = _gasInp[1];
   var _imgUrl   = useState('');
@@ -1036,19 +1042,18 @@ function SettingsModal(props) {
       <div className="sheet" onClick=${function(e) { e.stopPropagation(); }}>
         <h3 style=${{ fontWeight: '900', fontSize: '16px', marginBottom: '18px' }}>⚙️ 設定</h3>
 
-        <!-- ★ 1. アプリ更新 -->
+        <!-- アプリ更新 -->
         <div className="glass" style=${{ padding: '16px', marginBottom: '14px', borderRadius: '18px' }}>
           <p style=${{ fontSize: '12px', fontWeight: '800', color: '#38bdf8', marginBottom: '6px' }}>🔄 アプリを最新版に更新</p>
           <p style=${{ fontSize: '11px', color: 'rgba(238,242,255,.45)', marginBottom: '12px', lineHeight: '1.5' }}>キャッシュをクリアしてGitHubの最新版を読み込みます。</p>
           <button onClick=${forceUpdateNr} className="btn-ghost" style=${{ background: 'rgba(56,189,248,.08)', color: '#38bdf8', border: 'none', fontWeight: '700' }}>更新を確認する</button>
         </div>
 
-        <!-- ★ 2. チャットアイコン変更（画像対応） -->
+        <!-- チャットアイコン変更 -->
         <div className="glass" style=${{ padding: '16px', marginBottom: '14px', borderRadius: '18px' }}>
           <p style=${{ fontSize: '12px', fontWeight: '800', color: '#f472b6', marginBottom: '4px' }}>🎨 チャットアイコン</p>
           <p style=${{ fontSize: '11px', color: 'rgba(238,242,255,.45)', marginBottom: '12px', lineHeight: '1.5' }}>端末の写真またはURLで設定できます。</p>
 
-          <!-- プレビュー -->
           <div style=${{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '14px', padding: '12px', background: 'rgba(255,255,255,.03)', borderRadius: '14px' }}>
             <div style=${{ width: '52px', height: '52px', borderRadius: '50%', overflow: 'hidden', border: '2px solid rgba(244,114,182,.4)', flexShrink: '0', background: 'rgba(56,189,248,.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px' }}>
               ${prevImg
@@ -1061,12 +1066,10 @@ function SettingsModal(props) {
             </div>
           </div>
 
-          <!-- 端末からアップロード -->
           <label style=${{ display: 'block', width: '100%', padding: '12px', borderRadius: '14px', background: 'rgba(244,114,182,.08)', border: '1px dashed rgba(244,114,182,.3)', textAlign: 'center', cursor: 'pointer', fontSize: '13px', fontWeight: '700', color: '#f472b6', marginBottom: '10px' }}>
             📷 端末から写真を選ぶ
             <input type="file" accept="image/*" style=${{ display: 'none' }} onChange=${handleImgUpload} />
           </label>
-
 
           <div style=${{ display: 'flex', gap: '8px' }}>
             <button onClick=${applyIcon} className="btn-ghost" style=${{ flex: '1', background: 'rgba(244,114,182,.1)', color: '#f472b6', border: 'none', fontWeight: '700' }}>✓ 適用する</button>
@@ -1074,7 +1077,7 @@ function SettingsModal(props) {
           </div>
         </div>
 
-        <!-- ★ 3. スプシバックアップ -->
+        <!-- スプシバックアップ -->
         <div className="glass" style=${{ padding: '16px', marginBottom: '14px', borderRadius: '18px', border: '1px solid rgba(56,189,248,.15)' }}>
           <p style=${{ fontSize: '12px', fontWeight: '800', color: '#38bdf8', marginBottom: '4px' }}>☁️ スプシ自動バックアップ</p>
           <p style=${{ fontSize: '11px', color: 'rgba(238,242,255,.45)', lineHeight: '1.5', marginBottom: '12px' }}>データ変更から30秒後に自動でスプシへバックアップ。</p>
@@ -1096,8 +1099,8 @@ function SettingsModal(props) {
           <p style=${{ fontSize: '10px', color: 'rgba(238,242,255,.2)' }}>最終バックアップ: ${lbkStr}</p>
         </div>
 
-        <!-- 既存: AIチャット連携 -->
-        <div className="glass" style=${{ padding: '16px', marginBottom: '18px', borderRadius: '18px' }}>
+        <!-- AIチャット連携 -->
+        <div className="glass" style=${{ padding: '16px', marginBottom: '14px', borderRadius: '18px' }}>
           <p style=${{ fontSize: '12px', fontWeight: '800', color: '#38bdf8', marginBottom: '8px' }}>🤖 AIチャット連携 (Gemini API)</p>
           <p style=${{ fontSize: '11px', color: 'rgba(238,242,255,.5)', lineHeight: '1.5', marginBottom: '12px' }}>
             <a href="https://aistudio.google.com/" target="_blank" style=${{ color: '#f472b6', textDecoration: 'none' }}>Google AI Studio</a> から取得したAPIキーを入力すると、パートナーと対話できます。
@@ -1118,7 +1121,28 @@ function SettingsModal(props) {
           </button>
         </div>
 
-        <!-- 既存: データ管理 -->
+        <!-- ★ 追加: プロンプト設定 -->
+        <div className="glass" style=${{ padding: '16px', marginBottom: '18px', borderRadius: '18px' }}>
+          <p style=${{ fontSize: '12px', fontWeight: '800', color: '#f472b6', marginBottom: '8px' }}>📝 AIのキャラクター（プロンプト）設定</p>
+          <p style=${{ fontSize: '11px', color: 'rgba(238,242,255,.5)', lineHeight: '1.5', marginBottom: '12px' }}>
+            AIの口調や設定を自由に変更できます。
+          </p>
+          <textarea
+            value=${promptInp}
+            onInput=${function(e) { setPromptInp(e.target.value); }}
+            className="inp"
+            rows="6"
+            style=${{ marginBottom: '10px', fontSize: '12px', lineHeight: '1.4', width: '100%', resize: 'vertical' }}
+          ></textarea>
+          <button onClick=${function() {
+            onUpdate({ systemPrompt: promptInp });
+            alert('プロンプトを保存しました！');
+          }} className="btn-ghost" style=${{ background: 'rgba(244,114,182,.1)', color: '#f472b6', border: 'none', fontWeight: '700' }}>
+            プロンプトを保存する
+          </button>
+        </div>
+
+        <!-- データ管理 -->
         <p className="lbl" style=${{ marginBottom: '8px' }}>データ管理</p>
         <button onClick=${function() {
           if (confirm('ストリークをリセットしますか？\n本棚データは保持されます。')) {
