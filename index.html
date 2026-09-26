@@ -326,21 +326,6 @@ function forceUpdateNr() {
   } else { location.reload(true); }
 }
 
-/* ── Open Library ── */
-function searchOL(q) {
-  return fetch('https://openlibrary.org/search.json?q=' + encodeURIComponent(q) + '&limit=6&fields=title,author_name,cover_i')
-    .then(function(r) { return r.json(); })
-    .then(function(d) {
-      return (d.docs || []).map(function(x) {
-        return {
-          title: x.title || '不明',
-          author: (x.author_name || [])[0] || '不明',
-          coverUrl: x.cover_i ? 'https://covers.openlibrary.org/b/id/' + x.cover_i + '-M.jpg' : null
-        };
-      });
-    });
-}
-
 /* ── 写真 → 文字起こし（GAS経由でドライブ保存＋Gemini） ── */
 // 長辺1600pxのJPEGに縮小してbase64化（送信を軽くする）
 function shrinkImage(file) {
@@ -358,13 +343,14 @@ function shrinkImage(file) {
     img.src = u;
   });
 }
-function ocrImage(file, title) {
+// action: 'ocr'（メモの文字起こし）/ 'book'（表紙から本の情報）
+function postImage(action, file, extra) {
   var url = getNrGasUrl();
   if (!url) return Promise.reject(new Error('⚙️設定でGASのURLを保存してください'));
   return shrinkImage(file)
     .then(function(b64) {
       return fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, redirect: 'follow',
-        body: JSON.stringify({ action: 'ocr', image: b64, mime: 'image/jpeg', title: title }) });
+        body: JSON.stringify(Object.assign({ action: action, image: b64, mime: 'image/jpeg' }, extra)) });
     })
     .then(function(r) { return r.text(); })
     .then(function(t) { var j = JSON.parse(t); if (!j.success) throw new Error(j.error || '失敗'); return j; });
@@ -641,12 +627,8 @@ function HomeTab(props) {
 function ArchiveTab(props) {
   var data = props.data, onBooks = props.onBooks;
   var _tab     = useState('reading'); var tab = _tab[0], setTab = _tab[1];
-  var _addM    = useState(false);     var addM = _addM[0], setAdd = _addM[1];
   var _manM    = useState(false);     var manM = _manM[0], setMan = _manM[1];
   var _memoM   = useState(null);      var memoM = _memoM[0], setMemoM = _memoM[1];
-  var _q       = useState('');        var q = _q[0], setQ = _q[1];
-  var _results = useState([]);        var results = _results[0], setRes = _results[1];
-  var _srch    = useState(false);     var srch = _srch[0], setSrch = _srch[1];
   var _memoTxt = useState('');        var memoTxt = _memoTxt[0], setMemoTxt = _memoTxt[1];
   var _memoPg  = useState('');        var memoPg = _memoPg[0], setMemoPg = _memoPg[1];
   var _memoImgs = useState([]);       var memoImgs = _memoImgs[0], setMemoImgs = _memoImgs[1];
@@ -657,6 +639,12 @@ function ArchiveTab(props) {
   var _mTitle  = useState('');        var mTitle = _mTitle[0], setMTitle = _mTitle[1];
   var _mMotive = useState('');        var mMotive = _mMotive[0], setMMotive = _mMotive[1];
   var _mCover  = useState('');        var mCover = _mCover[0], setMCover = _mCover[1];
+  var _mAuthor = useState('');        var mAuthor = _mAuthor[0], setMAuthor = _mAuthor[1];
+  var _mGenre  = useState('');        var mGenre = _mGenre[0], setMGenre = _mGenre[1];
+  var _mPages  = useState('');        var mPages = _mPages[0], setMPages = _mPages[1];
+  var _bookBusy = useState(false);    var bookBusy = _bookBusy[0], setBookBusy = _bookBusy[1];
+  var coverRef = useRef(null);
+  var _eGenre  = useState('');        var eGenre = _eGenre[0], setEGenre = _eGenre[1];
   var _editM   = useState(null);      var editM = _editM[0], setEditM = _editM[1];
   var _eTitle  = useState('');        var eTitle = _eTitle[0], setETitle = _eTitle[1];
   var _eAuthor = useState('');        var eAuthor = _eAuthor[0], setEAuthor = _eAuthor[1];
@@ -673,14 +661,31 @@ function ArchiveTab(props) {
   var queue   = books.filter(function(b) { return b.status === 'queue'; });
   var done    = books.filter(function(b) { return b.status === 'done'; });
 
-  function doSearch() {
-    if (!q.trim()) return;
-    setSrch(true); setRes([]);
-    searchOL(q).then(function(r) { setRes(r); setSrch(false); }).catch(function() { setRes([]); setSrch(false); });
+  function addBook(status) {
+    if (!mTitle.trim() || bookBusy) return;
+    var info = { title: mTitle.trim(), author: mAuthor.trim(), genre: mGenre.trim(), totalPages: parseInt(mPages, 10) || null, motive: mMotive, coverUrl: mCover || null };
+    onBooks(books.concat([Object.assign({ id: String(Date.now()), status: status, currentPage: 0, memos: [], addedAt: jstISO() }, info)]));
+    closeAdd();
   }
-  function addBook(info, status) {
-    onBooks(books.concat([Object.assign({ id: String(Date.now()), status: status, currentPage: 0, totalPages: null, memos: [], addedAt: jstISO() }, info)]));
-    setAdd(false); setMan(false); setQ(''); setRes([]); setMTitle(''); setMMotive(''); setMCover('');
+  function closeAdd() {
+    if (bookBusy) return;
+    setMan(false); setMTitle(''); setMAuthor(''); setMGenre(''); setMPages(''); setMMotive(''); setMCover('');
+  }
+  // 表紙の写真 → 書名・著者（写真から）＋ ジャンル・総ページ数（GeminiがGoogle検索で調べる）
+  function onCover(e) {
+    var f = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (!f) return;
+    setBookBusy(true);
+    postImage('book', f, {})
+      .then(function(j) {
+        if (j.title) setMTitle(j.title);
+        if (j.author) setMAuthor(j.author);
+        if (j.genre) setMGenre(j.genre);
+        if (j.pages) setMPages(String(j.pages));
+      })
+      .catch(function(err) { alert('読み取りに失敗しました\n' + err.message); })
+      .then(function() { setBookBusy(false); });
   }
   function upBook(id, u) { onBooks(books.map(function(b) { return b.id === id ? Object.assign({}, b, u) : b; })); }
   function delBook(id) { if (!confirm('この本を削除しますか？')) return; onBooks(books.filter(function(b) { return b.id !== id; })); setEditM(null); }
@@ -710,7 +715,7 @@ function ArchiveTab(props) {
     if (memoPrev) URL.revokeObjectURL(memoPrev);
     setMemoPrev(URL.createObjectURL(f));
     setOcrBusy(true);
-    ocrImage(f, bk ? bk.title : '')
+    postImage('ocr', f, { title: bk ? bk.title : '' })
       .then(function(j) {
         setMemoTxt(function(p) { return p ? p + '\n\n' + j.text : j.text; });
         setMemoImgs(function(p) { return p.concat([j.url]); });
@@ -747,6 +752,7 @@ function ArchiveTab(props) {
           <div style=${{ flex: '1', minWidth: '0' }}>
             <p style=${{ fontWeight: '800', fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>${bk.title}</p>
             ${bk.author && html`<p style=${{ fontSize: '11px', color: 'rgba(238,242,255,.35)', marginTop: '2px' }}>${bk.author}</p>`}
+            ${bk.genre && html`<span style=${{ display:'inline-block', marginTop:'5px', padding:'2px 8px', borderRadius:'99px', fontSize:'10px', fontWeight:'700', background:'rgba(129,140,248,.14)', color:'#a5b4fc' }}>${bk.genre}</span>`}
             ${bk.motive && html`<p style=${{ fontSize: '11px', color: 'rgba(238,242,255,.6)', marginTop: '6px', lineHeight: '1.4', padding: '6px', background: 'rgba(255,255,255,.05)', borderLeft: '2px solid #38bdf8', borderRadius: '0 4px 4px 0' }}>💡 ${bk.motive}</p>`}
             ${(bk.review || bk.rating) && html`
               <div style=${{ marginTop: '6px', padding: '8px', background: 'rgba(244,114,182,.1)', borderLeft: '2px solid #f472b6', borderRadius: '0 4px 4px 0' }}>
@@ -792,7 +798,7 @@ function ArchiveTab(props) {
           <button className="act act-sec press" onClick=${function(){openMemo(bk);}}>✏️ 書く</button>
         </div>
         <div style=${{ display:'flex', gap:'8px', marginTop:'8px' }}>
-          <button className="act act-sub press" onClick=${function(){setETitle(bk.title||'');setEAuthor(bk.author||'');setEMotive(bk.motive||'');setECover(bk.coverUrl||'');setEReview(bk.review||'');setEStar(bk.rating||0);setEditM(bk.id);}}>⚙️ 編集</button>
+          <button className="act act-sub press" onClick=${function(){setETitle(bk.title||'');setEAuthor(bk.author||'');setEGenre(bk.genre||'');setEMotive(bk.motive||'');setECover(bk.coverUrl||'');setEReview(bk.review||'');setEStar(bk.rating||0);setEditM(bk.id);}}>⚙️ 編集</button>
           ${bk.status==='reading' && html`<button className="act act-sub press" onClick=${function(){setRStar(bk.rating||0);setRText(bk.review||'');setRateM(bk.id);}} style=${{ color:'#818cf8' }}>✅ 読了</button>`}
           ${bk.status==='queue'   && html`<button className="act act-sub press" onClick=${function(){upBook(bk.id,{status:'reading'});}} style=${{ color:'#38bdf8' }}>📖 読む</button>`}
           ${bk.status==='done'    && html`<button className="act act-sub press" onClick=${function(){upBook(bk.id,{status:'reading'});}} style=${{ color:'#38bdf8' }}>↩ 再読</button>`}
@@ -834,59 +840,34 @@ function ArchiveTab(props) {
           </div>
         `}
         ${list.map(function(bk) { return html`<${BookCard} key=${bk.id} bk=${bk} />`; })}
-        <button onClick=${function(){setAdd(true);}} className="press" style=${{
+        <button onClick=${function(){setMan(true);}} className="press" style=${{
           width:'100%', padding:'16px', borderRadius:'20px',
           border:'1.5px dashed rgba(255,255,255,.09)', background:'transparent',
           color:'rgba(238,242,255,.28)', fontSize:'13px', fontWeight:'700'
         }}>＋ 本を追加する</button>
       </div>
 
-      <!-- Add Modal -->
-      ${addM && html`
-        <div className="modal-bg" onClick=${function(){setAdd(false);setRes([]);setQ('');}}>
+      <!-- Add Modal（表紙を撮る or 手入力） -->
+      ${manM && html`
+        <div className="modal-bg" onClick=${closeAdd}>
           <div className="sheet" onClick=${function(e){e.stopPropagation();}}>
             <h3 style=${{ fontWeight:'900', fontSize:'16px', marginBottom:'14px' }}>📚 本を追加</h3>
+            <button className="act act-pri press" onClick=${function(){coverRef.current.click();}} disabled=${bookBusy} style=${{ width:'100%', marginBottom:'6px', opacity: bookBusy ? '.5' : '1' }}>
+              ${bookBusy ? '⏳ 表紙を読んで調べています…（10〜30秒）' : '📷 表紙を撮って自動入力'}
+            </button>
+            <p style=${{ fontSize:'11px', color:'rgba(238,242,255,.4)', textAlign:'center', marginBottom:'14px' }}>ジャンルと総ページ数はGeminiが調べます。違っていたら直してね</p>
+            <input type="file" accept="image/*" capture="environment" ref=${coverRef} onChange=${onCover} style=${{ display:'none' }} />
+            <input value=${mTitle} onInput=${function(e){setMTitle(e.target.value);}} placeholder="書名 *" className="inp" style=${{ marginBottom:'10px' }} />
+            <input value=${mAuthor} onInput=${function(e){setMAuthor(e.target.value);}} placeholder="著者名" className="inp" style=${{ marginBottom:'10px' }} />
             <div style=${{ display:'flex', gap:'8px', marginBottom:'10px' }}>
-              <input value=${q} onInput=${function(e){setQ(e.target.value);}} onKeyDown=${function(e){if(e.key==='Enter')doSearch();}}
-                placeholder="書名・著者名（英語書籍向け）" className="inp" style=${{ flex:'1' }} autoFocus />
-              <button onClick=${doSearch} disabled=${srch} className="press" style=${{
-                padding:'12px 16px', borderRadius:'14px', color:'white', fontWeight:'700', fontSize:'13px', flexShrink:'0',
-                background:'linear-gradient(130deg,#38bdf8,#818cf8)'
-              }}>${srch ? '…' : '検索'}</button>
+              <input value=${mGenre} onInput=${function(e){setMGenre(e.target.value);}} placeholder="ジャンル" className="inp" style=${{ flex:'1' }} />
+              <input type="number" inputMode="numeric" value=${mPages} onInput=${function(e){setMPages(e.target.value);}} placeholder="総ページ数" className="inp" style=${{ flex:'1' }} />
             </div>
-            ${results.map(function(bk,i) { return html`
-              <div key=${i} style=${{ display:'flex', gap:'12px', alignItems:'center', padding:'10px 12px', borderRadius:'16px', marginBottom:'8px', background:'rgba(255,255,255,.038)', border:'1px solid rgba(255,255,255,.06)' }}>
-                ${bk.coverUrl ? html`<img src=${bk.coverUrl} style=${{ width:'36px', height:'50px', borderRadius:'6px', objectFit:'cover', flexShrink:'0' }} />` : html`<div style=${{ width:'36px', height:'50px', borderRadius:'6px', background:'rgba(255,255,255,.05)', flexShrink:'0', display:'flex', alignItems:'center', justifyContent:'center' }}>📚</div>`}
-                <div style=${{ flex:'1', minWidth:'0' }}>
-                  <p style=${{ fontSize:'13px', fontWeight:'700', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>${bk.title}</p>
-                  <p style=${{ fontSize:'11px', color:'rgba(238,242,255,.35)' }}>${bk.author}</p>
-                </div>
-                <div style=${{ display:'flex', flexDirection:'column', gap:'5px' }}>
-                  <span className="chip press" onClick=${function(){addBook(bk,'reading');}} style=${{ background:'rgba(56,189,248,.18)',color:'#38bdf8',fontSize:'11px' }}>読中</span>
-                  <span className="chip press" onClick=${function(){addBook(bk,'queue');}} style=${{ background:'rgba(129,140,248,.18)',color:'#818cf8',fontSize:'11px' }}>積読</span>
-                </div>
-              </div>
-            `;})}
-            <hr className="soft" />
-            <button onClick=${function(){setMTitle(q);setMan(true);setAdd(false);}} className="btn-ghost">📝 手動で追加（日本語書籍・URLで書影登録）</button>
-            <div style=${{ height:'8px' }}></div>
-          </div>
-        </div>
-      `}
-
-      <!-- Manual Add Modal -->
-      ${manM && html`
-        <div className="modal-bg" onClick=${function(){setMan(false);}}>
-          <div className="sheet" onClick=${function(e){e.stopPropagation();}}>
-            <h3 style=${{ fontWeight:'900', fontSize:'16px', marginBottom:'14px' }}>📝 手動で追加</h3>
-            <input value=${mTitle} onInput=${function(e){setMTitle(e.target.value);}} placeholder="書名 *" className="inp" style=${{ marginBottom:'10px' }} autoFocus />
             <textarea value=${mMotive} onInput=${function(e){setMMotive(e.target.value);}} placeholder="なぜ読もうと思ったか？" rows="2" className="inp" style=${{ marginBottom:'10px' }}></textarea>
-            <input value=${mCover} onInput=${function(e){setMCover(e.target.value);}} placeholder="書影URL（任意）" className="inp" style=${{ marginBottom:'18px' }} />
-            <div style=${{ display:'flex', gap:'8px', marginBottom:'8px' }}>
-              <button onClick=${function(){if(!mTitle.trim())return;addBook({title:mTitle,motive:mMotive,coverUrl:mCover||null},'reading');}} className="press"
-                style=${{ flex:'1', padding:'14px', borderRadius:'16px', background:'rgba(56,189,248,.16)', color:'#38bdf8', fontWeight:'800', fontSize:'13px' }}>📖 読中</button>
-              <button onClick=${function(){if(!mTitle.trim())return;addBook({title:mTitle,motive:mMotive,coverUrl:mCover||null},'queue');}} className="press"
-                style=${{ flex:'1', padding:'14px', borderRadius:'16px', background:'rgba(129,140,248,.16)', color:'#818cf8', fontWeight:'800', fontSize:'13px' }}>📚 積読</button>
+            <input value=${mCover} onInput=${function(e){setMCover(e.target.value);}} placeholder="書影URL（任意）" className="inp" style=${{ marginBottom:'16px' }} />
+            <div style=${{ display:'flex', gap:'8px', marginBottom:'8px', opacity: mTitle.trim() && !bookBusy ? '1' : '.4' }}>
+              <button className="act act-sec press" onClick=${function(){addBook('reading');}}>📖 読中で登録</button>
+              <button className="act press" onClick=${function(){addBook('queue');}} style=${{ background:'rgba(129,140,248,.16)', color:'#818cf8' }}>📚 積読で登録</button>
             </div>
           </div>
         </div>
@@ -948,13 +929,14 @@ function ArchiveTab(props) {
             <h3 style=${{ fontWeight:'900', fontSize:'16px', marginBottom:'14px' }}>⚙️ 本の編集</h3>
             <input value=${eTitle} onInput=${function(e){setETitle(e.target.value);}} placeholder="書名 *" className="inp" style=${{ marginBottom:'10px' }} />
             <input value=${eAuthor} onInput=${function(e){setEAuthor(e.target.value);}} placeholder="著者名" className="inp" style=${{ marginBottom:'10px' }} />
+            <input value=${eGenre} onInput=${function(e){setEGenre(e.target.value);}} placeholder="ジャンル" className="inp" style=${{ marginBottom:'10px' }} />
             <textarea value=${eMotive} onInput=${function(e){setEMotive(e.target.value);}} placeholder="なぜ読もうと思ったか？" rows="2" className="inp" style=${{ marginBottom:'10px' }}></textarea>
             <input value=${eCover} onInput=${function(e){setECover(e.target.value);}} placeholder="書影URL（任意）" className="inp" style=${{ marginBottom:'18px' }} />
             <hr className="soft" />
             <p className="lbl" style=${{ marginBottom:'12px', textAlign:'center' }}>評価と総括</p>
             <div style=${{ marginBottom:'16px' }}><${StarRating} value=${eStar} onChange=${setEStar} /></div>
             <textarea value=${eReview} onInput=${function(e){setEReview(e.target.value);}} placeholder="この本から得た最大の学び..." rows="3" className="inp" style=${{ marginBottom:'16px' }}></textarea>
-            <button onClick=${function(){if(!eTitle.trim())return;upBook(editM,{title:eTitle,author:eAuthor,motive:eMotive,coverUrl:eCover||null,review:eReview,rating:eStar});setEditM(null);}} className="btn-grad">保存する</button>
+            <button onClick=${function(){if(!eTitle.trim())return;upBook(editM,{title:eTitle,author:eAuthor,genre:eGenre.trim(),motive:eMotive,coverUrl:eCover||null,review:eReview,rating:eStar});setEditM(null);}} className="btn-grad">保存する</button>
             <button onClick=${function(){delBook(editM);}} className="press" style=${{ width:'100%', marginTop:'12px', padding:'12px', fontSize:'13px', fontWeight:'700', color:'#f472b6' }}>🗑 この本を削除</button>
             <div style=${{ height:'8px' }}></div>
           </div>
