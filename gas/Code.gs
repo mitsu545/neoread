@@ -43,14 +43,14 @@ function doPost(e) {
 function ocr(body) {
   if (!body.image) throw new Error('画像がありません');
   var mime = body.mime || 'image/jpeg';
-  var text = geminiOcr(body.image, mime);
+  var r = geminiOcr(body.image, mime);
 
   var it = DriveApp.getFoldersByName(IMG_FOLDER);
   var folder = it.hasNext() ? it.next() : DriveApp.createFolder(IMG_FOLDER);
   var name = (body.title || 'book') + '_' + Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyyMMdd_HHmmss') + '.jpg';
   var file = folder.createFile(Utilities.newBlob(Utilities.base64Decode(body.image), mime, name));
 
-  return { success: true, text: text, fileId: file.getId(), url: file.getUrl() };
+  return { success: true, text: r.text, page: r.page, fileId: file.getId(), url: file.getUrl() };
 }
 
 function geminiOcr(base64, mime) {
@@ -66,19 +66,23 @@ function geminiOcr(base64, mime) {
     muteHttpExceptions: true,
     payload: JSON.stringify({
       contents: [{ parts: [
-        { text: 'これは本のページの写真です。本文をそのまま正確に文字起こししてください。' +
-                'ページ番号・柱（ページ上部の章タイトル等）は除き、段落の区切りは改行で表してください。' +
-                '説明や前置きは書かず、本文だけを出力してください。' },
+        { text: 'これは本のページの写真です。次の形のJSONだけを出力してください。\n' +
+                '{"page": ページ番号の数字（写っていなければ null。見開きなら小さい方）, "text": "本文"}\n' +
+                'text には本文をそのまま正確に文字起こしし、ページ番号・柱（ページ上部の章タイトル等）は含めず、段落の区切りは改行で表してください。' },
         { inline_data: { mime_type: mime, data: base64 } }
-      ]}]
+      ]}],
+      generationConfig: { responseMimeType: 'application/json' }
     })
   });
   var j = JSON.parse(res.getContentText());
   if (res.getResponseCode() !== 200) throw new Error('Gemini: ' + (j.error ? j.error.message : res.getResponseCode()));
   var parts = (j.candidates && j.candidates[0].content && j.candidates[0].content.parts) || [];
-  var text = parts.map(function(p) { return p.text || ''; }).join('').trim();
+  var out = parts.map(function(p) { return p.text || ''; }).join('').trim();
+  var r;
+  try { r = JSON.parse(out); } catch(err) { r = { text: out }; } // JSONで返らなかったら全体を本文として扱う
+  var text = String(r.text || '').trim();
   if (!text) throw new Error('文字を読み取れませんでした');
-  return text;
+  return { text: text, page: parseInt(r.page, 10) || null };
 }
 
 // 復元: A1セルのJSONを返す
@@ -129,7 +133,7 @@ function testBackup() {
 // ※初回実行時に「ドライブ」「外部サービス」の権限を許可してください
 function testGemini() {
   var png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
-  try { Logger.log(geminiOcr(png, 'image/png')); }
+  try { Logger.log(JSON.stringify(geminiOcr(png, 'image/png'))); }
   catch(err) { Logger.log(err.message); } // 「文字を読み取れませんでした」はキー・モデルOKの意味
   DriveApp.getRootFolder(); // ドライブ権限の許可を促す
 }
