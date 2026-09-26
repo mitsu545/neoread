@@ -105,6 +105,15 @@
       color: rgba(238,242,255,.42);
     }
     .press { transition: transform .1s; }
+    /* 押しやすい大きなボタン（高さ44px以上） */
+    .act { flex: 1; height: 48px; border-radius: 14px; display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 14px; font-weight: 800; }
+    .act-pri { background: linear-gradient(130deg, #38bdf8 0%, #818cf8 50%, #f472b6 100%); color: #fff; }
+    .act-sec { background: rgba(56,189,248,.12); border: 1px solid rgba(56,189,248,.25); color: #38bdf8; }
+    .act-sub { height: 42px; font-size: 13px; font-weight: 700; background: rgba(255,255,255,.05); color: rgba(238,242,255,.6); }
+    .step { width: 52px; height: 52px; flex-shrink: 0; border-radius: 14px; background: rgba(255,255,255,.07); font-size: 22px; font-weight: 900; }
+    input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+    input[type=number] { -moz-appearance: textfield; }
+    .clamp2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
     .press:active { transform: scale(.94); }
 
     .chip {
@@ -642,6 +651,9 @@ function ArchiveTab(props) {
   var _memoPg  = useState('');        var memoPg = _memoPg[0], setMemoPg = _memoPg[1];
   var _memoImgs = useState([]);       var memoImgs = _memoImgs[0], setMemoImgs = _memoImgs[1];
   var _ocrBusy = useState(false);     var ocrBusy = _ocrBusy[0], setOcrBusy = _ocrBusy[1];
+  var _memoPrev = useState(null);     var memoPrev = _memoPrev[0], setMemoPrev = _memoPrev[1]; // 撮った写真のプレビュー
+  var _listM   = useState(null);      var listM = _listM[0], setListM = _listM[1];             // メモ一覧を開いている本
+  var fileRef  = useRef(null);
   var _mTitle  = useState('');        var mTitle = _mTitle[0], setMTitle = _mTitle[1];
   var _mMotive = useState('');        var mMotive = _mMotive[0], setMMotive = _mMotive[1];
   var _mCover  = useState('');        var mCover = _mCover[0], setMCover = _mCover[1];
@@ -671,7 +683,7 @@ function ArchiveTab(props) {
     setAdd(false); setMan(false); setQ(''); setRes([]); setMTitle(''); setMMotive(''); setMCover('');
   }
   function upBook(id, u) { onBooks(books.map(function(b) { return b.id === id ? Object.assign({}, b, u) : b; })); }
-  function delBook(id) { if (confirm('この本を削除しますか？')) onBooks(books.filter(function(b) { return b.id !== id; })); }
+  function delBook(id) { if (!confirm('この本を削除しますか？')) return; onBooks(books.filter(function(b) { return b.id !== id; })); setEditM(null); }
   function saveMemo(bookId) {
     if (!memoTxt.trim()) return;
     var bk = books.find(function(b) { return b.id === bookId; });
@@ -680,17 +692,29 @@ function ArchiveTab(props) {
     upBook(bookId, { memos: (bk ? bk.memos || [] : []).concat([memo]) });
     closeMemo();
   }
-  function closeMemo() { if (ocrBusy) return; setMemoTxt(''); setMemoPg(''); setMemoImgs([]); setMemoM(null); }
+  function closeMemo() {
+    if (ocrBusy) return;
+    if (memoPrev) URL.revokeObjectURL(memoPrev);
+    setMemoTxt(''); setMemoPg(''); setMemoImgs([]); setMemoPrev(null); setMemoM(null);
+  }
+  // メモを開く（ページは今読んでいるページを初期値に）
+  function openMemo(bk) { setMemoPg(bk.currentPage ? String(bk.currentPage) : ''); setMemoM(bk.id); }
+  function shootFor(bk) { openMemo(bk); fileRef.current.click(); }
+  function stepPg(d) { setMemoPg(String(Math.max(1, (parseInt(memoPg, 10) || 0) + d))); }
   function onPhoto(e) {
     var f = e.target.files && e.target.files[0];
     e.target.value = ''; // 同じ写真を選び直せるように
     if (!f) return;
     var bk = books.find(function(b) { return b.id === memoM; });
+    var first = memoImgs.length === 0;
+    if (memoPrev) URL.revokeObjectURL(memoPrev);
+    setMemoPrev(URL.createObjectURL(f));
     setOcrBusy(true);
     ocrImage(f, bk ? bk.title : '')
       .then(function(j) {
         setMemoTxt(function(p) { return p ? p + '\n\n' + j.text : j.text; });
         setMemoImgs(function(p) { return p.concat([j.url]); });
+        if (first && j.page) setMemoPg(String(j.page)); // 1枚目の写真のページ番号を採用
       })
       .catch(function(err) { alert('文字起こしに失敗しました\n' + err.message); })
       .then(function() { setOcrBusy(false); });
@@ -749,24 +773,29 @@ function ArchiveTab(props) {
                 <p style=${{ fontSize:'10px', color:'rgba(238,242,255,.2)', marginTop:'3px' }}>${Math.min(100,Math.round((bk.currentPage||0)/bk.totalPages*100))}%</p>
               </div>
             `}
-            ${recentMemos.map(function(m) { return html`
-              <div key=${m.id} style=${{ borderLeft:'2px solid rgba(56,189,248,.25)', paddingLeft:'8px', marginBottom:'5px' }}>
-                <p style=${{ fontSize:'11px', color:'rgba(238,242,255,.45)', lineHeight:'1.5' }}>
-                  ${m.page && html`<span style=${{ color:'rgba(56,189,248,.5)',marginRight:'5px' }}>p.${m.page}</span>`}${m.text}
-                  ${(m.imgs || []).map(function(u, i) { return html`<a key=${i} href=${u} target="_blank" rel="noopener" style=${{ marginLeft:'5px', textDecoration:'none' }}>📷</a>`; })}
-                </p>
-              </div>
-            `;})}
-            ${bk.memos && bk.memos.length > 2 && html`<p style=${{ fontSize:'10px', color:'rgba(238,242,255,.2)', marginBottom:'4px' }}>+${bk.memos.length-2} 件のメモ</p>`}
-            <div style=${{ display:'flex', gap:'6px', flexWrap:'wrap', marginTop:'8px' }}>
-              <span className="chip press" onClick=${function(){setMemoM(bk.id);}} style=${{ background:'rgba(56,189,248,.12)',color:'#38bdf8' }}>📝 メモ</span>
-              <span className="chip press" onClick=${function(){setETitle(bk.title||'');setEAuthor(bk.author||'');setEMotive(bk.motive||'');setECover(bk.coverUrl||'');setEReview(bk.review||'');setEStar(bk.rating||0);setEditM(bk.id);}} style=${{ background:'rgba(255,255,255,.08)',color:'rgba(238,242,255,.6)' }}>⚙️ 編集</span>
-              ${bk.status==='reading' && html`<span className="chip press" onClick=${function(){setRStar(bk.rating||0);setRText(bk.review||'');setRateM(bk.id);}} style=${{ background:'rgba(129,140,248,.12)',color:'#818cf8' }}>✅ 読了</span>`}
-              ${bk.status==='queue'   && html`<span className="chip press" onClick=${function(){upBook(bk.id,{status:'reading'});}} style=${{ background:'rgba(56,189,248,.12)',color:'#38bdf8' }}>📖 読む</span>`}
-              ${bk.status==='done'    && html`<span className="chip press" onClick=${function(){upBook(bk.id,{status:'reading'});}} style=${{ background:'rgba(56,189,248,.12)',color:'#38bdf8' }}>↩ 再読</span>`}
-              <span className="chip press" onClick=${function(){delBook(bk.id);}} style=${{ background:'rgba(255,255,255,.04)',color:'rgba(238,242,255,.25)' }}>🗑</span>
-            </div>
           </div>
+        </div>
+        ${recentMemos.map(function(m) { return html`
+          <div key=${m.id} style=${{ borderLeft:'2px solid rgba(56,189,248,.35)', paddingLeft:'10px', marginTop:'10px' }}>
+            <p className="clamp2" style=${{ fontSize:'13px', color:'rgba(238,242,255,.78)', lineHeight:'1.6' }}>
+              ${m.page && html`<span style=${{ color:'#38bdf8', fontWeight:'700', marginRight:'6px' }}>p.${m.page}</span>`}${(m.imgs || []).length > 0 && '📷 '}${m.text}
+            </p>
+          </div>
+        `;})}
+        ${(bk.memos || []).length > 0 && html`
+          <button className="press" onClick=${function(){setListM(bk.id);}} style=${{ width:'100%', display:'flex', justifyContent:'space-between', alignItems:'center', marginTop:'10px', padding:'12px 14px', borderRadius:'12px', background:'rgba(255,255,255,.05)', fontSize:'13px', fontWeight:'700', color:'rgba(238,242,255,.65)' }}>
+            <span>メモ ${bk.memos.length}件をすべて見る</span><span>›</span>
+          </button>
+        `}
+        <div style=${{ display:'flex', gap:'8px', marginTop:'12px' }}>
+          <button className="act act-pri press" onClick=${function(){shootFor(bk);}}>📷 撮る</button>
+          <button className="act act-sec press" onClick=${function(){openMemo(bk);}}>✏️ 書く</button>
+        </div>
+        <div style=${{ display:'flex', gap:'8px', marginTop:'8px' }}>
+          <button className="act act-sub press" onClick=${function(){setETitle(bk.title||'');setEAuthor(bk.author||'');setEMotive(bk.motive||'');setECover(bk.coverUrl||'');setEReview(bk.review||'');setEStar(bk.rating||0);setEditM(bk.id);}}>⚙️ 編集</button>
+          ${bk.status==='reading' && html`<button className="act act-sub press" onClick=${function(){setRStar(bk.rating||0);setRText(bk.review||'');setRateM(bk.id);}} style=${{ color:'#818cf8' }}>✅ 読了</button>`}
+          ${bk.status==='queue'   && html`<button className="act act-sub press" onClick=${function(){upBook(bk.id,{status:'reading'});}} style=${{ color:'#38bdf8' }}>📖 読む</button>`}
+          ${bk.status==='done'    && html`<button className="act act-sub press" onClick=${function(){upBook(bk.id,{status:'reading'});}} style=${{ color:'#38bdf8' }}>↩ 再読</button>`}
         </div>
       </div>
     `;
@@ -868,18 +897,49 @@ function ArchiveTab(props) {
         <div className="modal-bg" onClick=${closeMemo}>
           <div className="sheet" onClick=${function(e){e.stopPropagation();}}>
             <h3 style=${{ fontWeight:'900', fontSize:'16px', marginBottom:'14px' }}>✏️ 気づきメモ</h3>
-            <input type="number" value=${memoPg} onInput=${function(e){setMemoPg(e.target.value);}} placeholder="ページ数（任意）" className="inp" style=${{ marginBottom:'10px' }} />
-            <label className="btn-ghost press" style=${{ display:'block', textAlign:'center', marginBottom:'10px', fontWeight:'700', color:'#38bdf8', opacity: ocrBusy ? '.5' : '1' }}>
-              ${ocrBusy ? '⏳ 文字起こし中…（10〜20秒）' : '📷 写真から文字起こし'}
-              <input type="file" accept="image/*" capture="environment" onChange=${onPhoto} disabled=${ocrBusy} style=${{ display:'none' }} />
-            </label>
-            ${memoImgs.length > 0 && html`<p style=${{ fontSize:'11px', color:'rgba(238,242,255,.45)', marginBottom:'8px' }}>📁 画像${memoImgs.length}枚をドライブに保存済み。不要な文章は削ってから保存してね</p>`}
-            <textarea value=${memoTxt} onInput=${function(e){setMemoTxt(e.target.value);}} placeholder="心に残った1行や、自分の考えをメモ..." rows=${memoImgs.length ? '8' : '4'} className="inp" style=${{ marginBottom:'16px' }} autoFocus></textarea>
+            <button className="act act-sec press" onClick=${function(){fileRef.current.click();}} disabled=${ocrBusy} style=${{ width:'100%', marginBottom:'12px', opacity: ocrBusy ? '.5' : '1' }}>
+              ${ocrBusy ? '⏳ 文字起こし中…（10〜20秒）' : memoImgs.length ? '📷 もう1枚撮る' : '📷 撮影して文字起こし'}
+            </button>
+            ${memoPrev && html`<img src=${memoPrev} style=${{ width:'100%', maxHeight:'160px', objectFit:'cover', borderRadius:'12px', marginBottom:'8px', opacity: ocrBusy ? '.5' : '1' }} />`}
+            ${memoImgs.length > 0 && html`<p style=${{ fontSize:'12px', color:'#38bdf8', marginBottom:'12px' }}>✓ 画像${memoImgs.length}枚をドライブに保存しました。いらない文章は削ってから保存してね</p>`}
+            <p className="lbl" style=${{ marginBottom:'6px' }}>ページ</p>
+            <div style=${{ display:'flex', gap:'8px', marginBottom:'12px' }}>
+              <button className="step press" onClick=${function(){stepPg(-1);}}>−</button>
+              <input type="number" inputMode="numeric" value=${memoPg} onInput=${function(e){setMemoPg(e.target.value);}} placeholder="未入力" className="inp" style=${{ textAlign:'center', fontWeight:'800', fontSize:'18px' }} />
+              <button className="step press" onClick=${function(){stepPg(1);}}>＋</button>
+            </div>
+            <textarea value=${memoTxt} onInput=${function(e){setMemoTxt(e.target.value);}} placeholder="心に残った1行や、自分の考えをメモ..." rows=${memoImgs.length ? '8' : '4'} className="inp" style=${{ marginBottom:'16px', fontSize:'15px' }}></textarea>
             <button onClick=${function(){saveMemo(memoM);}} disabled=${ocrBusy} className="btn-grad">保存する</button>
             <div style=${{ height:'8px' }}></div>
           </div>
         </div>
       `}
+
+      <!-- 撮影用（本のカードの「📷 撮る」とメモ画面で共通） -->
+      <input type="file" accept="image/*" capture="environment" ref=${fileRef} onChange=${onPhoto} style=${{ display:'none' }} />
+
+      <!-- Memo List Modal -->
+      ${listM && (function() {
+        var lb = books.find(function(b) { return b.id === listM; });
+        if (!lb) return null;
+        return html`
+        <div className="modal-bg" onClick=${function(){setListM(null);}}>
+          <div className="sheet" onClick=${function(e){e.stopPropagation();}}>
+            <h3 style=${{ fontWeight:'900', fontSize:'16px', marginBottom:'14px' }}>📚 ${lb.title} のメモ（${(lb.memos || []).length}件）</h3>
+            ${(lb.memos || []).slice().reverse().map(function(m) { return html`
+              <div key=${m.id} className="glass" style=${{ padding:'14px', marginBottom:'10px', borderRadius:'16px' }}>
+                <p style=${{ fontSize:'12px', color:'#38bdf8', fontWeight:'700', marginBottom:'6px' }}>
+                  ${m.page ? 'p.' + m.page + ' ・ ' : ''}${m.date}
+                  ${(m.imgs || []).map(function(u, i) { return html`<a key=${i} href=${u} target="_blank" rel="noopener" style=${{ marginLeft:'10px', textDecoration:'none', color:'#38bdf8' }}>📷 画像${(m.imgs.length > 1) ? i + 1 : ''}</a>`; })}
+                </p>
+                <p style=${{ fontSize:'15px', lineHeight:'1.8', whiteSpace:'pre-wrap', color:'rgba(238,242,255,.9)' }}>${m.text}</p>
+              </div>
+            `;})}
+            <button onClick=${function(){setListM(null);}} className="btn-grad" style=${{ marginTop:'6px' }}>閉じる</button>
+            <div style=${{ height:'8px' }}></div>
+          </div>
+        </div>`;
+      })()}
 
       <!-- Edit Modal -->
       ${editM && html`
@@ -895,6 +955,7 @@ function ArchiveTab(props) {
             <div style=${{ marginBottom:'16px' }}><${StarRating} value=${eStar} onChange=${setEStar} /></div>
             <textarea value=${eReview} onInput=${function(e){setEReview(e.target.value);}} placeholder="この本から得た最大の学び..." rows="3" className="inp" style=${{ marginBottom:'16px' }}></textarea>
             <button onClick=${function(){if(!eTitle.trim())return;upBook(editM,{title:eTitle,author:eAuthor,motive:eMotive,coverUrl:eCover||null,review:eReview,rating:eStar});setEditM(null);}} className="btn-grad">保存する</button>
+            <button onClick=${function(){delBook(editM);}} className="press" style=${{ width:'100%', marginTop:'12px', padding:'12px', fontSize:'13px', fontWeight:'700', color:'#f472b6' }}>🗑 この本を削除</button>
             <div style=${{ height:'8px' }}></div>
           </div>
         </div>
