@@ -332,6 +332,35 @@ function searchOL(q) {
     });
 }
 
+/* ── 写真 → 文字起こし（GAS経由でドライブ保存＋Gemini） ── */
+// 長辺1600pxのJPEGに縮小してbase64化（送信を軽くする）
+function shrinkImage(file) {
+  return new Promise(function(ok, ng) {
+    var img = new Image(), u = URL.createObjectURL(file);
+    img.onload = function() {
+      var s = Math.min(1, 1600 / Math.max(img.width, img.height));
+      var c = document.createElement('canvas');
+      c.width = Math.round(img.width * s); c.height = Math.round(img.height * s);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(u);
+      ok(c.toDataURL('image/jpeg', 0.85).split(',')[1]);
+    };
+    img.onerror = function() { URL.revokeObjectURL(u); ng(new Error('画像を読み込めません')); };
+    img.src = u;
+  });
+}
+function ocrImage(file, title) {
+  var url = getNrGasUrl();
+  if (!url) return Promise.reject(new Error('⚙️設定でGASのURLを保存してください'));
+  return shrinkImage(file)
+    .then(function(b64) {
+      return fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, redirect: 'follow',
+        body: JSON.stringify({ action: 'ocr', image: b64, mime: 'image/jpeg', title: title }) });
+    })
+    .then(function(r) { return r.text(); })
+    .then(function(t) { var j = JSON.parse(t); if (!j.success) throw new Error(j.error || '失敗'); return j; });
+}
+
 /* ── SVG Icons ── */
 var SvgIcon = {
   Home: html`<svg width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>`,
@@ -611,6 +640,8 @@ function ArchiveTab(props) {
   var _srch    = useState(false);     var srch = _srch[0], setSrch = _srch[1];
   var _memoTxt = useState('');        var memoTxt = _memoTxt[0], setMemoTxt = _memoTxt[1];
   var _memoPg  = useState('');        var memoPg = _memoPg[0], setMemoPg = _memoPg[1];
+  var _memoImgs = useState([]);       var memoImgs = _memoImgs[0], setMemoImgs = _memoImgs[1];
+  var _ocrBusy = useState(false);     var ocrBusy = _ocrBusy[0], setOcrBusy = _ocrBusy[1];
   var _mTitle  = useState('');        var mTitle = _mTitle[0], setMTitle = _mTitle[1];
   var _mMotive = useState('');        var mMotive = _mMotive[0], setMMotive = _mMotive[1];
   var _mCover  = useState('');        var mCover = _mCover[0], setMCover = _mCover[1];
@@ -644,8 +675,25 @@ function ArchiveTab(props) {
   function saveMemo(bookId) {
     if (!memoTxt.trim()) return;
     var bk = books.find(function(b) { return b.id === bookId; });
-    upBook(bookId, { memos: (bk ? bk.memos || [] : []).concat([{ id: String(Date.now()), text: memoTxt, page: memoPg, date: jstISO() }]) });
-    setMemoTxt(''); setMemoPg(''); setMemoM(null);
+    var memo = { id: String(Date.now()), text: memoTxt, page: memoPg, date: jstISO() };
+    if (memoImgs.length) memo.imgs = memoImgs;
+    upBook(bookId, { memos: (bk ? bk.memos || [] : []).concat([memo]) });
+    closeMemo();
+  }
+  function closeMemo() { if (ocrBusy) return; setMemoTxt(''); setMemoPg(''); setMemoImgs([]); setMemoM(null); }
+  function onPhoto(e) {
+    var f = e.target.files && e.target.files[0];
+    e.target.value = ''; // 同じ写真を選び直せるように
+    if (!f) return;
+    var bk = books.find(function(b) { return b.id === memoM; });
+    setOcrBusy(true);
+    ocrImage(f, bk ? bk.title : '')
+      .then(function(j) {
+        setMemoTxt(function(p) { return p ? p + '\n\n' + j.text : j.text; });
+        setMemoImgs(function(p) { return p.concat([j.url]); });
+      })
+      .catch(function(err) { alert('文字起こしに失敗しました\n' + err.message); })
+      .then(function() { setOcrBusy(false); });
   }
 
   function StarRating(srProps) {
@@ -705,6 +753,7 @@ function ArchiveTab(props) {
               <div key=${m.id} style=${{ borderLeft:'2px solid rgba(56,189,248,.25)', paddingLeft:'8px', marginBottom:'5px' }}>
                 <p style=${{ fontSize:'11px', color:'rgba(238,242,255,.45)', lineHeight:'1.5' }}>
                   ${m.page && html`<span style=${{ color:'rgba(56,189,248,.5)',marginRight:'5px' }}>p.${m.page}</span>`}${m.text}
+                  ${(m.imgs || []).map(function(u, i) { return html`<a key=${i} href=${u} target="_blank" rel="noopener" style=${{ marginLeft:'5px', textDecoration:'none' }}>📷</a>`; })}
                 </p>
               </div>
             `;})}
@@ -816,12 +865,17 @@ function ArchiveTab(props) {
 
       <!-- Memo Modal -->
       ${memoM && html`
-        <div className="modal-bg" onClick=${function(){setMemoM(null);setMemoTxt('');setMemoPg('');}}>
+        <div className="modal-bg" onClick=${closeMemo}>
           <div className="sheet" onClick=${function(e){e.stopPropagation();}}>
             <h3 style=${{ fontWeight:'900', fontSize:'16px', marginBottom:'14px' }}>✏️ 気づきメモ</h3>
             <input type="number" value=${memoPg} onInput=${function(e){setMemoPg(e.target.value);}} placeholder="ページ数（任意）" className="inp" style=${{ marginBottom:'10px' }} />
-            <textarea value=${memoTxt} onInput=${function(e){setMemoTxt(e.target.value);}} placeholder="心に残った1行や、自分の考えをメモ..." rows="4" className="inp" style=${{ marginBottom:'16px' }} autoFocus></textarea>
-            <button onClick=${function(){saveMemo(memoM);}} className="btn-grad">保存する</button>
+            <label className="btn-ghost press" style=${{ display:'block', textAlign:'center', marginBottom:'10px', fontWeight:'700', color:'#38bdf8', opacity: ocrBusy ? '.5' : '1' }}>
+              ${ocrBusy ? '⏳ 文字起こし中…（10〜20秒）' : '📷 写真から文字起こし'}
+              <input type="file" accept="image/*" capture="environment" onChange=${onPhoto} disabled=${ocrBusy} style=${{ display:'none' }} />
+            </label>
+            ${memoImgs.length > 0 && html`<p style=${{ fontSize:'11px', color:'rgba(238,242,255,.45)', marginBottom:'8px' }}>📁 画像${memoImgs.length}枚をドライブに保存済み。不要な文章は削ってから保存してね</p>`}
+            <textarea value=${memoTxt} onInput=${function(e){setMemoTxt(e.target.value);}} placeholder="心に残った1行や、自分の考えをメモ..." rows=${memoImgs.length ? '8' : '4'} className="inp" style=${{ marginBottom:'16px' }} autoFocus></textarea>
+            <button onClick=${function(){saveMemo(memoM);}} disabled=${ocrBusy} className="btn-grad">保存する</button>
             <div style=${{ height:'8px' }}></div>
           </div>
         </div>
